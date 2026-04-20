@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+import { api } from "@/lib/api"
 import { Loader2, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react"
 import dynamic from "next/dynamic"
 
@@ -148,48 +149,19 @@ export default function ExamPage() {
       if (timerRef.current) clearInterval(timerRef.current)
       setSubmitting(true)
 
-      const submittedAt = new Date()
-
-      let scoredPoints = 0
-      let totalPoints = 0
-
-      for (const eq of examQuestions) {
-        totalPoints += eq.points
-        const userAnswer = answers[eq.question.id] ?? ""
-        const correct = eq.question.correct_answer ?? ""
-        const qType = eq.question.type
-
-        if (qType === "객관식" || qType === "OX") {
-          if (userAnswer === correct) scoredPoints += eq.points
-        } else if (qType === "단답형") {
-          if (
-            userAnswer.trim().toLowerCase() === correct.trim().toLowerCase()
-          )
-            scoredPoints += eq.points
-        }
-        // 서술형/코딩: 수동채점, 0점
-      }
-
-      const score =
-        totalPoints > 0 ? Math.round((scoredPoints / totalPoints) * 100) : 0
-      const is_passed = exam ? score >= exam.passing_score : false
-
       try {
-        await supabase.from("exam_attempts").insert({
+        const { score, is_passed } = await api.exams.submitDirect({
           exam_id: examId,
-          user_id: userId,
-          applicant_name: applicantName,
-          started_at: startedAt?.toISOString(),
-          submitted_at: submittedAt.toISOString(),
           answers,
-          score,
-          is_passed,
+          started_at: startedAt?.toISOString() ?? new Date().toISOString(),
+          applicant_name: applicantName,
         })
+        setResult({ score, is_passed, answers, examQuestions })
       } catch (err) {
         console.error("제출 오류:", err)
+        setSubmitting(false)
+        return
       }
-
-      setResult({ score, is_passed, answers, examQuestions })
       setPhase("submitted")
       setSubmitting(false)
     },

@@ -39,6 +39,8 @@ export const api = {
   },
   exams: {
     list: () => request("/exams/"),
+    submitDirect: (body: { exam_id: string; answers: Record<string, string>; started_at: string; applicant_name: string }) =>
+      request<{ score: number; is_passed: boolean }>("/exams/submit", { method: "POST", body: JSON.stringify(body) }),
     start: (exam_id: string) =>
       request("/exams/attempts/start", { method: "POST", body: JSON.stringify({ exam_id }) }),
     submit: (attempt_id: string, answers: Record<string, unknown>) =>
