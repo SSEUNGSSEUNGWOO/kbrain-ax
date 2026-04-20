@@ -42,7 +42,16 @@ async def create_application(body: ApplicationCreate, authorization: str = Heade
 @router.get("/{application_id}")
 async def get_application(application_id: str, authorization: str = Header(...)):
     sb = get_supabase()
+    user = sb.auth.get_user(authorization.removeprefix("Bearer "))
+    profile = sb.table("profiles").select("role").eq("id", user.user.id).single().execute()
+
     result = sb.table("applications").select("*").eq("id", application_id).single().execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="지원서 없음")
+
+    is_admin = profile.data.get("role") == "admin"
+    is_owner = result.data.get("user_id") == user.user.id
+    if not is_admin and not is_owner:
+        raise HTTPException(status_code=403, detail="접근 권한 없음")
+
     return result.data
