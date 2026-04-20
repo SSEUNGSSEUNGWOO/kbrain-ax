@@ -69,7 +69,7 @@ export default function ExamPage() {
 
   useEffect(() => {
     init()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function init() {
     const { data: sessionData } = await supabase.auth.getSession()
@@ -138,7 +138,7 @@ export default function ExamPage() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
     }
-  }, [phase])
+  }, [phase]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = useCallback(
     async (autoSubmit = false) => {
