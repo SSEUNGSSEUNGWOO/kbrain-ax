@@ -33,6 +33,11 @@ ai-service/output/
 ai-service/logs/
 ai-service/calibration_profile.json
 
+# ─── 생성 파일 ───
+*.pdf
+*.html
+pdf_style.css
+
 # ─── 기타 ───
 .DS_Store
 *.pem
