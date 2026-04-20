@@ -1,0 +1,39 @@
+# ─── 환경변수 ───
+.env
+.env.local
+.env*.local
+**/.env
+**/.env.local
+**/.env*.local
+
+# ─── Node ───
+node_modules/
+.next/
+out/
+build/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tsbuildinfo
+
+# ─── Python ───
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+
+# ─── AI Service 출력물 ───
+ai-service/output/
+ai-service/logs/
+ai-service/calibration_profile.json
+
+# ─── 기타 ───
+.DS_Store
+*.pem
+.vercel
