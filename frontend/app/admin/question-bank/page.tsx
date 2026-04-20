@@ -77,8 +77,8 @@ export default function QuestionBankPage() {
     setQuestions(prev => prev.filter(q => q.id !== id))
   }
 
-  const categories = [...new Set(questions.map(q => q.category).filter(Boolean))]
-  const types = [...new Set(questions.map(q => q.type).filter(Boolean))]
+  const categories = Array.from(new Set(questions.map(q => q.category).filter(Boolean)))
+  const types = Array.from(new Set(questions.map(q => q.type).filter(Boolean)))
   const filtered = questions.filter(q =>
     (!filterCategory || q.category === filterCategory) &&
     (!filterType || q.type === filterType) &&
