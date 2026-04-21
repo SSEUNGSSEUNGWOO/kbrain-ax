@@ -45,11 +45,14 @@ export async function GET(request: Request) {
     if (user) {
       const { data: profile } = await supabase2
         .from('profiles')
-        .select('role')
+        .select('role, full_name')
         .eq('id', user.id)
         .single()
       if (profile?.role === 'admin') {
         return NextResponse.redirect(`${origin}/admin`)
+      }
+      if (!profile?.full_name) {
+        return NextResponse.redirect(`${origin}/profile/setup`)
       }
       return NextResponse.redirect(`${origin}/dashboard`)
     }

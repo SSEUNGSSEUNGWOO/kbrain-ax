@@ -342,7 +342,9 @@ export default function ExamPage() {
     const user = sessionData.session.user
     setUserId(user.id)
     userIdRef.current = user.id
-    setApplicantName(user.user_metadata?.full_name || user.email || user.id)
+
+    const { data: profile } = await supabase.from("profiles").select("full_name").eq("id", user.id).single()
+    setApplicantName(profile?.full_name || user.user_metadata?.full_name || user.email || user.id)
 
     const { data: examData, error: examError } = await supabase
       .from("exams").select("*").eq("id", examId).single()
