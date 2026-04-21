@@ -29,12 +29,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       if (!session) { router.replace("/signin"); return }
 
       const { data: profile } = await supabase
-        .from("profiles").select("role").eq("id", session.user.id).single()
+        .from("profiles").select("role, full_name").eq("id", session.user.id).single()
       if (profile?.role !== "admin") { router.replace("/"); return }
 
       const meta = session.user.user_metadata
       setUser({
-        name: meta?.full_name ?? meta?.name ?? session.user.email?.split("@")[0] ?? "관리자",
+        name: profile?.full_name ?? meta?.full_name ?? meta?.name ?? session.user.email?.split("@")[0] ?? "관리자",
         email: session.user.email ?? "",
         avatar: meta?.avatar_url ?? meta?.picture,
       })

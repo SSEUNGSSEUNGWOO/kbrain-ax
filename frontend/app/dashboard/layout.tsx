@@ -25,9 +25,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.replace("/signin"); return }
 
+      const { data: profile } = await supabase
+        .from("profiles").select("full_name").eq("id", session.user.id).single()
       const meta = session.user.user_metadata
       setUser({
-        name: meta?.full_name ?? meta?.name ?? session.user.email?.split("@")[0] ?? "지원자",
+        name: profile?.full_name ?? meta?.full_name ?? meta?.name ?? session.user.email?.split("@")[0] ?? "지원자",
         email: session.user.email ?? "",
         avatar: meta?.avatar_url ?? meta?.picture,
       })
