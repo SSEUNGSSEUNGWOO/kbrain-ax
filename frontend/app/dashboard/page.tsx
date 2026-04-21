@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
-import { CheckCircle2, Clock, XCircle, Loader2, PenLine } from "lucide-react"
+import {
+  CheckCircle2, Clock, XCircle, Loader2, PenLine,
+  BookOpen, ChevronRight, AlertCircle, Trophy, CalendarDays
+} from "lucide-react"
 import Link from "next/link"
 
 interface Selection {
@@ -20,6 +23,15 @@ interface Application {
   selection_id?: string
 }
 
+interface Attempt {
+  id: string
+  exam_id: string
+  score: number
+  is_passed: boolean
+  submitted_at: string
+  exam?: { title: string }
+}
+
 function buildSteps(sel: Selection | null) {
   const steps = [{ key: "submitted", label: "지원서 제출" }]
   if (!sel) { steps.push({ key: "final", label: "최종 결과" }); return steps }
@@ -34,16 +46,79 @@ function buildSteps(sel: Selection | null) {
   return steps
 }
 
-const STATUS_INFO: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  submitted:    { label: "제출 완료", color: "text-blue-600 dark:text-blue-400",       icon: Clock },
-  under_review: { label: "검토 중",   color: "text-amber-600 dark:text-amber-400",     icon: Clock },
-  pass:         { label: "서면 합격", color: "text-emerald-600 dark:text-emerald-400", icon: CheckCircle2 },
-  fail:         { label: "불합격",    color: "text-red-500 dark:text-red-400",         icon: XCircle },
+function NextAction({ status, hasExam }: { status: string; hasExam: boolean }) {
+  if (status === "submitted") {
+    return (
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-xl p-4 flex items-start gap-3">
+        <Clock className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">지원서 검토 중</p>
+          <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">지원서가 성공적으로 제출되었습니다. 서면 심사 결과를 기다려 주세요.</p>
+        </div>
+      </div>
+    )
+  }
+  if (status === "under_review") {
+    return (
+      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-xl p-4 flex items-start gap-3">
+        <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">서면 심사 진행 중</p>
+          <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">심사위원 검토가 진행 중입니다. 결과가 나오면 이메일로 안내드립니다.</p>
+        </div>
+      </div>
+    )
+  }
+  if (status === "pass" && hasExam) {
+    return (
+      <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/40 rounded-xl p-4">
+        <div className="flex items-start gap-3 mb-3">
+          <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">서면 심사 합격 — 온라인 시험 응시 가능</p>
+            <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">아래 버튼을 눌러 지금 바로 시험에 응시하세요.</p>
+          </div>
+        </div>
+        <Link
+          href="/dashboard/exams"
+          className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition-colors"
+        >
+          <BookOpen className="h-4 w-4" />
+          시험 응시하러 가기
+          <ChevronRight className="h-4 w-4" />
+        </Link>
+      </div>
+    )
+  }
+  if (status === "pass") {
+    return (
+      <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/40 rounded-xl p-4 flex items-start gap-3">
+        <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">서면 심사 합격</p>
+          <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">축하합니다! 다음 전형 안내를 기다려 주세요.</p>
+        </div>
+      </div>
+    )
+  }
+  if (status === "fail") {
+    return (
+      <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40 rounded-xl p-4 flex items-start gap-3">
+        <XCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-red-800 dark:text-red-300">아쉽게도 탈락하셨습니다</p>
+          <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">다음 기회에 다시 도전해 주세요.</p>
+        </div>
+      </div>
+    )
+  }
+  return null
 }
 
 export default function DashboardPage() {
   const [application, setApplication] = useState<Application | null>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
+  const [attempts, setAttempts] = useState<Attempt[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -58,12 +133,19 @@ export default function DashboardPage() {
       const app = apps?.[0] ?? null
       setApplication(app)
 
-      if (app?.selection_id) {
-        const { data } = await supabase
-          .from("selections").select("id, title, has_written_eval, has_exam, exam_first")
-          .eq("id", app.selection_id).single()
-        if (data) setSelection(data as Selection)
-      }
+      const [selRes, attRes] = await Promise.all([
+        app?.selection_id
+          ? supabase.from("selections").select("id, title, has_written_eval, has_exam, exam_first").eq("id", app.selection_id).single()
+          : Promise.resolve({ data: null }),
+        supabase.from("exam_attempts")
+          .select("id, exam_id, score, is_passed, submitted_at, exam:exams(title)")
+          .eq("user_id", session.user.id)
+          .order("submitted_at", { ascending: false })
+          .limit(3),
+      ])
+
+      if (selRes.data) setSelection(selRes.data as Selection)
+      if (attRes.data) setAttempts(attRes.data as Attempt[])
 
       setLoading(false)
     }
@@ -100,7 +182,6 @@ export default function DashboardPage() {
 
   const steps = buildSteps(selection)
   const currentIdx = application.status === "fail" ? -1 : steps.findIndex(s => s.key === application.status)
-  const statusInfo = STATUS_INFO[application.status]
 
   return (
     <div className="p-6 space-y-5">
@@ -109,9 +190,12 @@ export default function DashboardPage() {
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{selection?.title ?? "선발 전형"} 진행 현황입니다.</p>
       </div>
 
+      {/* 다음 할 일 */}
+      <NextAction status={application.status} hasExam={selection?.has_exam ?? false} />
+
       {/* 진행 단계 */}
-      <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 p-6">
-        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-6">선발 진행 현황</p>
+      <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 p-5">
+        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-5">전형 단계</p>
         <div className="flex items-center w-full">
           {steps.map((step, i) => {
             const isFail = application.status === "fail"
@@ -143,39 +227,64 @@ export default function DashboardPage() {
             )
           })}
         </div>
-
-        {statusInfo && (
-          <div className={`mt-5 flex items-center gap-2 text-sm font-medium ${statusInfo.color}`}>
-            <statusInfo.icon className="h-4 w-4" />
-            현재 상태: {statusInfo.label}
-            {application.status === "under_review" && (
-              <span className="text-xs font-normal text-slate-400 ml-1">— 결과 발표까지 기다려 주세요</span>
-            )}
-          </div>
-        )}
-
-        {application.status === "fail" && (
-          <div className="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/40 p-3">
-            <p className="text-xs text-red-600 dark:text-red-400">아쉽게 탈락하였습니다. 다음 기회에 다시 도전해 주세요.</p>
-          </div>
-        )}
       </div>
 
-      {/* 바로가기 */}
-      <div className="grid grid-cols-2 gap-4">
-        <Link href="/dashboard/application" className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4 hover:border-blue-300 dark:hover:border-blue-700 transition-colors group">
-          <div className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center mb-3 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/50 transition-colors">
-            <PenLine className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+      {/* 시험 결과 요약 */}
+      {attempts.length > 0 && (
+        <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">시험 결과</span>
+            </div>
+            <Link href="/dashboard/exams" className="text-xs text-blue-600 dark:text-blue-400 hover:underline">전체 보기</Link>
           </div>
-          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">지원서</p>
-          <p className="text-xs text-slate-400 mt-0.5">제출한 지원서 확인</p>
-        </Link>
-        <Link href="/dashboard/exams" className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4 hover:border-blue-300 dark:hover:border-blue-700 transition-colors group">
-          <div className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center mb-3 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/50 transition-colors">
-            <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <div className="divide-y divide-slate-100 dark:divide-slate-700/40">
+            {attempts.map((att) => (
+              <div key={att.id} className="px-5 py-3.5 flex items-center gap-3">
+                <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${
+                  att.is_passed ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-red-100 dark:bg-red-900/30"
+                }`}>
+                  {att.is_passed
+                    ? <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    : <XCircle className="h-4 w-4 text-red-500 dark:text-red-400" />
+                  }
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
+                    {(att.exam as unknown as { title: string })?.title ?? "시험"}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                    <CalendarDays className="h-3 w-3" />
+                    {new Date(att.submitted_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">{att.score}<span className="text-xs font-normal text-slate-400 ml-0.5">점</span></p>
+                  <p className={`text-xs font-semibold ${att.is_passed ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
+                    {att.is_passed ? "합격" : "불합격"}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
-          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">시험</p>
-          <p className="text-xs text-slate-400 mt-0.5">응시 가능한 시험 확인</p>
+        </div>
+      )}
+
+      {/* 지원 정보 요약 */}
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4">
+          <p className="text-xs text-slate-400 mb-1">지원서 제출일</p>
+          <p className="font-semibold text-slate-800 dark:text-slate-200">
+            {new Date(application.created_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}
+          </p>
+        </div>
+        <Link href="/dashboard/application" className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4 hover:border-blue-300 dark:hover:border-blue-700 transition-colors group flex flex-col justify-between">
+          <p className="text-xs text-slate-400 mb-1">지원서</p>
+          <div className="flex items-center justify-between">
+            <p className="font-semibold text-slate-800 dark:text-slate-200">내용 확인</p>
+            <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-blue-500 transition-colors" />
+          </div>
         </Link>
       </div>
     </div>

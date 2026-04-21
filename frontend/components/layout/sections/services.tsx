@@ -1,42 +1,41 @@
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { FileText, BookOpen, BrainCircuit, BarChart3 } from "lucide-react";
 
-enum ProService {
-  YES = 1,
-  NO = 0,
-}
 interface ServiceProps {
+  icon: React.ElementType;
   title: string;
-  pro: ProService;
   description: string;
 }
+
 const serviceList: ServiceProps[] = [
   {
-    title: "Custom Domain Integration",
+    icon: FileText,
+    title: "지원서 수집 및 관리",
     description:
-      "Lorem ipsum dolor sit, amet consectetur adipisicing elit adipisicing.",
-    pro: 0,
+      "전형별 지원서 항목을 자유롭게 설계하고, 지원자 현황을 한눈에 확인하세요.",
   },
   {
-    title: "Social Media Integrations",
+    icon: BrainCircuit,
+    title: "AI 루브릭 서면 심사",
     description:
-      "Lorem ipsum dolor sit, amet consectetur adipisicing elit. Molestiae, dicta.",
-    pro: 0,
+      "평가 기준(루브릭)을 설정하면 AI가 지원서를 자동으로 분석해 점수와 피드백을 생성합니다.",
   },
   {
-    title: "Email Marketing Integrations",
-    description: "Lorem dolor sit amet adipisicing.",
-    pro: 0,
+    icon: BookOpen,
+    title: "온라인 시험",
+    description:
+      "객관식·서술형·코딩 등 다양한 문제 유형을 지원하며, 부정행위 방지 기능이 내장되어 있습니다.",
   },
   {
-    title: "SEO Optimization",
-    description: "Lorem ipsum dolor sit amet consectetur.",
-    pro: 1,
+    icon: BarChart3,
+    title: "결과 대시보드",
+    description:
+      "전형 단계별 합격·불합격 현황, 점수 분포, 지원자 통계를 실시간으로 확인하세요.",
   },
 ];
 
@@ -48,31 +47,23 @@ export const ServicesSection = () => {
       </h2>
 
       <h2 className="text-3xl md:text-4xl text-center font-bold mb-4">
-        Grow Your Business
+        선발 전형의 모든 단계를 하나로
       </h2>
-      <h3 className="md:w-1/2 mx-auto text-xl text-center text-muted-foreground mb-8">
-        From marketing and sales to operations and strategy, we have the
-        expertise to help you achieve your goals.
+      <h3 className="md:w-1/2 mx-auto text-xl text-center text-muted-foreground mb-10">
+        지원 접수부터 AI 심사, 온라인 시험, 최종 결과 발표까지
+        KBrain-AX 하나로 운영하세요.
       </h3>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-2 gap-4 w-full lg:w-[60%] mx-auto">
-        {serviceList.map(({ title, description, pro }) => (
-          <Card
-            key={title}
-            className="bg-muted/60 dark:bg-card h-full relative"
-          >
+        {serviceList.map(({ icon: Icon, title, description }) => (
+          <Card key={title} className="bg-muted/60 dark:bg-card h-full">
             <CardHeader>
+              <div className="mb-2">
+                <Icon className="h-6 w-6 text-primary" />
+              </div>
               <CardTitle>{title}</CardTitle>
               <CardDescription>{description}</CardDescription>
             </CardHeader>
-            <Badge
-              data-pro={ProService.YES === pro}
-              variant="secondary"
-              className="absolute -top-2 -right-3 data-[pro=false]:hidden"
-            >
-              PRO
-            </Badge>
           </Card>
         ))}
       </div>

@@ -6,6 +6,10 @@ html {
   scroll-behavior: smooth;
 }
 
+.keep-all {
+  word-break: keep-all;
+}
+
 /* *=========== Default theme =========== */
 /* @layer base {
   :root {

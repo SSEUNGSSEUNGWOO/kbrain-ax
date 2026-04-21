@@ -2,12 +2,10 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
-import { useTheme } from "next-themes";
 import Image from "next/image";
 import Link from "next/link";
 
 export const HeroSection = () => {
-  const { theme } = useTheme();
   return (
     <section className="container w-full">
       <div className="grid place-items-center lg:max-w-screen-xl gap-8 mx-auto py-20 md:py-32">
@@ -27,18 +25,19 @@ export const HeroSection = () => {
             </Badge>
           </div>
 
-          <div className="max-w-screen-md mx-auto text-center text-4xl md:text-6xl font-bold">
+          <div className="max-w-screen-md mx-auto text-center text-5xl md:text-7xl font-bold">
             <h1>
               AI·데이터 인재 선발,
               <br />
-              <span className="text-transparent bg-gradient-to-r from-[#3b82f6] to-[#1d4ed8] bg-clip-text">
+              <span className="text-transparent bg-gradient-to-r from-[#3b82f6] to-[#1d4ed8] bg-clip-text mt-4 block">
                 더 스마트하게
               </span>
             </h1>
           </div>
 
-          <p className="max-w-screen-sm mx-auto text-xl text-muted-foreground">
-            지원서 접수부터 루브릭 평가, 온라인 시험, 최종 선발까지. KBrain-AX로 공공기관의 인재 선발 프로세스를 하나의 플랫폼에서 관리하세요.
+          <p className="max-w-screen-sm mx-auto text-xl text-muted-foreground keep-all">
+            지원서 접수부터 루브릭 평가, 온라인 시험, 최종 선발까지.<br />
+            KBrain-AX로 공공기관의 인재 선발 프로세스를 하나의 플랫폼에서 관리하세요.
           </p>
 
           <div className="space-y-4 md:space-y-0 md:space-x-4">
@@ -67,11 +66,7 @@ export const HeroSection = () => {
             width={1200}
             height={1200}
             className="w-full md:w-[1200px] mx-auto rounded-lg relative rouded-lg leading-none flex items-center border border-t-2 border-secondary  border-t-primary/30"
-            src={
-              theme === "light"
-                ? "/hero-image-light.jpeg"
-                : "/hero-image-dark.jpeg"
-            }
+            src="/hero-image-light.jpeg"
             alt="dashboard"
           />
 

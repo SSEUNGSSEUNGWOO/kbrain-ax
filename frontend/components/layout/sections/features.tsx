@@ -51,7 +51,7 @@ export const FeaturesSection = () => {
   return (
     <section id="features" className="container py-24 sm:py-32">
       <h2 className="text-lg text-primary text-center mb-2 tracking-wider">
-        주요 기능
+        Features
       </h2>
 
       <h2 className="text-3xl md:text-4xl text-center font-bold mb-4">

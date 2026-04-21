@@ -40,7 +40,7 @@ export const BenefitsSection = () => {
     <section id="benefits" className="container py-24 sm:py-32">
       <div className="grid lg:grid-cols-2 place-items-center lg:gap-24">
         <div>
-          <h2 className="text-lg text-primary mb-2 tracking-wider">왜 KBrain-AX인가요?</h2>
+          <h2 className="text-lg text-primary mb-2 tracking-wider">Why KBrain-AX?</h2>
 
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
             선발 과정의 공정성과 효율성을 동시에
