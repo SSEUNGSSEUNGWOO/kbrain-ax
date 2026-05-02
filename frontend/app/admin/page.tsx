@@ -46,6 +46,7 @@ export default function AdminDashboard() {
   const [scoreDistribution, setScoreDistribution] = useState<{ range: string; count: number }[]>([])
   const [statusPie, setStatusPie] = useState<{ name: string; value: number; color: string }[]>([])
   const [recentActivity, setRecentActivity] = useState<ActivityRow[]>([])
+  const [profileMap, setProfileMap] = useState<Record<string, string>>({})
 
   useEffect(() => {
     async function load() {
@@ -111,7 +112,17 @@ export default function AdminDashboard() {
           .filter(s => s.value > 0)
       )
 
-      setRecentActivity((activityRes.data ?? []) as ActivityRow[])
+      const activities = (activityRes.data ?? []) as ActivityRow[]
+      setRecentActivity(activities)
+
+      const uniqUserIds = Array.from(new Set(activities.map(a => a.user_id)))
+      if (uniqUserIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles").select("id,full_name").in("id", uniqUserIds)
+        if (profiles) {
+          setProfileMap(Object.fromEntries(profiles.map(p => [p.id, p.full_name ?? ""])))
+        }
+      }
     }
     load()
   }, [])
@@ -124,10 +135,19 @@ export default function AdminDashboard() {
   ]
 
   const eventLabel: Record<string, string> = {
-    exam_submit: "시험 제출",
-    tab_switch:  "탭 전환 감지",
-    exam_start:  "시험 시작",
-    exam_view:   "시험 조회",
+    exam_submit:      "시험 제출",
+    exam_start:       "시험 시작",
+    exam_view:        "시험 조회",
+    tab_switch:       "탭 전환",
+    capture_attempt:  "캡쳐 시도",
+    copy_attempt:     "복사 시도",
+    paste_attempt:    "붙여넣기 시도",
+    devtool_attempt:  "개발자도구 시도",
+    context_menu:     "우클릭",
+    shortcut_attempt: "단축키",
+    absent_face:      "자리 비움",
+    multiple_faces:   "다중 인물",
+    admin_capture:    "감독자 캡쳐",
   }
 
   return (
@@ -234,22 +254,26 @@ export default function AdminDashboard() {
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">최근 활동</p>
               </div>
               <ul className="divide-y divide-slate-100 dark:divide-slate-700/40">
-                {recentActivity.map(a => (
-                  <li key={a.id} className="px-5 py-3 flex items-center gap-3">
-                    <div className="h-7 w-7 rounded-full bg-blue-500 flex items-center justify-center shrink-0 text-xs font-bold text-white">
-                      {a.user_id.slice(0, 1).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
-                        {eventLabel[a.event_type] ?? a.event_type}
-                      </p>
-                      <p className="text-xs text-slate-400 truncate font-mono">{a.user_id.slice(0, 8)}…</p>
-                    </div>
-                    <span className="text-[10px] text-slate-400 shrink-0">
-                      {new Date(a.created_at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
-                    </span>
-                  </li>
-                ))}
+                {recentActivity.map(a => {
+                  const name = profileMap[a.user_id] || a.user_id.slice(0, 8) + "…"
+                  const initial = (profileMap[a.user_id] ?? a.user_id).slice(0, 1).toUpperCase()
+                  return (
+                    <li key={a.id} className="px-5 py-3 flex items-center gap-3">
+                      <div className="h-7 w-7 rounded-full bg-blue-500 flex items-center justify-center shrink-0 text-xs font-bold text-white">
+                        {initial}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
+                          {eventLabel[a.event_type] ?? a.event_type}
+                        </p>
+                        <p className="text-xs text-slate-400 truncate">{name}</p>
+                      </div>
+                      <span className="text-[10px] text-slate-400 shrink-0">
+                        {new Date(a.created_at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
+                      </span>
+                    </li>
+                  )
+                })}
               </ul>
             </div>
           )}

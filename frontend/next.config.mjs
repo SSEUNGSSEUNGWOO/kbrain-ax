@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  transpilePackages: ['@mediapipe/tasks-vision'],
   eslint: {
     ignoreDuringBuilds: true,
   },

@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase"
 import { api } from "@/lib/api"
 import {
   Loader2, ArrowLeft, FileText, BookOpen,
-  Sparkles, CheckCircle2, XCircle, Clock, Users
+  Sparkles, CheckCircle2, XCircle, Clock, Users, Eye
 } from "lucide-react"
 import Link from "next/link"
 
@@ -283,12 +283,20 @@ export default function SelectionDetailPage() {
             ) : (
               <ul className="divide-y divide-slate-100 dark:divide-slate-700/40">
                 {exams.map(exam => (
-                  <li key={exam.id} className="px-5 py-4 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{exam.title}</p>
+                  <li key={exam.id} className="px-5 py-4 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{exam.title}</p>
                       <p className="text-xs text-slate-400 mt-0.5">제한 시간 {exam.time_limit}분</p>
                     </div>
-                    <StatusPill status={exam.status} />
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Link
+                        href={`/admin/exams/${exam.id}/monitor`}
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200"
+                      >
+                        <Eye className="h-3 w-3" /> 감독
+                      </Link>
+                      <StatusPill status={exam.status} />
+                    </div>
                   </li>
                 ))}
               </ul>
