@@ -24,7 +24,10 @@ const DIFFICULTY_STYLE: Record<string, string> = {
 
 const TYPE_STYLE: Record<string, string> = {
   객관식: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  주관식: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  OX: "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  단답형: "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  서술형: "bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
+  코딩: "bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400",
 }
 
 export default function QuestionBankPage() {
@@ -58,10 +61,10 @@ export default function QuestionBankPage() {
       difficulty: form.difficulty,
       type: form.type,
       explanation: form.explanation.trim() || null,
+      correct_answer: form.correct_answer.trim() || null,
     }
     if (form.type === "객관식") {
       payload.options = form.options.filter(o => o.trim())
-      payload.correct_answer = form.correct_answer.trim() || null
     }
     const { data } = await supabase.from("question_bank").insert(payload).select().single()
     if (data) {
@@ -116,10 +119,13 @@ export default function QuestionBankPage() {
           <div className="flex gap-3">
             <input value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} placeholder="카테고리"
               className="flex-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
+            <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value, correct_answer: "" }))}
               className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="객관식">객관식</option>
-              <option value="주관식">주관식</option>
+              <option value="OX">OX</option>
+              <option value="단답형">단답형</option>
+              <option value="서술형">서술형</option>
+              <option value="코딩">코딩</option>
             </select>
             <select value={form.difficulty} onChange={e => setForm(p => ({ ...p, difficulty: e.target.value }))}
               className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -143,7 +149,48 @@ export default function QuestionBankPage() {
                 className="w-32 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 px-3 py-1.5 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           )}
-          <input value={form.explanation} onChange={e => setForm(p => ({ ...p, explanation: e.target.value }))} placeholder="해설 (선택)"
+          {form.type === "OX" && (
+            <div className="flex gap-2">
+              {["O", "X"].map(v => {
+                const selected = form.correct_answer === v
+                const selClass = v === "O"
+                  ? "bg-emerald-50 border-emerald-300 text-emerald-600 dark:bg-emerald-900/30 dark:border-emerald-700 dark:text-emerald-400"
+                  : "bg-red-50 border-red-300 text-red-500 dark:bg-red-900/30 dark:border-red-700 dark:text-red-400"
+                return (
+                  <button key={v} type="button"
+                    onClick={() => setForm(p => ({ ...p, correct_answer: v }))}
+                    className={`h-12 w-12 rounded-xl text-2xl font-black border transition-colors ${selected ? selClass : "bg-slate-50 border-slate-200 text-slate-300 dark:bg-slate-900/50 dark:border-slate-700 hover:border-slate-300"}`}>
+                    {v}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {form.type === "단답형" && (
+            <input value={form.correct_answer} onChange={e => setForm(p => ({ ...p, correct_answer: e.target.value }))}
+              placeholder="정답"
+              className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          )}
+          {(form.type === "서술형" || form.type === "코딩") && (
+            <div className="space-y-2">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 cursor-pointer">
+                <input type="checkbox"
+                  checked={form.correct_answer === "수동채점"}
+                  onChange={e => setForm(p => ({ ...p, correct_answer: e.target.checked ? "수동채점" : "" }))}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                수동 채점 문항으로 등록
+              </label>
+              {form.correct_answer !== "수동채점" && (
+                <textarea value={form.correct_answer}
+                  onChange={e => setForm(p => ({ ...p, correct_answer: e.target.value }))}
+                  placeholder="모범 답안 (선택)"
+                  rows={4}
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none font-mono" />
+              )}
+            </div>
+          )}
+          <input value={form.explanation} onChange={e => setForm(p => ({ ...p, explanation: e.target.value }))}
+            placeholder={form.type === "서술형" || form.type === "코딩" ? "채점 기준 (선택)" : "해설 (선택)"}
             className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 px-3 py-2 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
           <div className="flex justify-end gap-2">
             <button onClick={() => setShowForm(false)} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors">취소</button>
