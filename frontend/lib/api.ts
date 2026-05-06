@@ -1,20 +1,10 @@
-import { supabase } from "./supabase"
-
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"
 
-async function getAuthHeader(): Promise<string> {
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session?.access_token) throw new Error("로그인이 필요합니다")
-  return `Bearer ${session.access_token}`
-}
-
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const authorization = await getAuthHeader()
   const res = await fetch(`${BACKEND_URL}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      authorization,
       ...options?.headers,
     },
   })

@@ -2,7 +2,9 @@ import os
 import httpx
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
-from lib.supabase import get_supabase
+from lib.db import get_conn
+from lib.auth import get_current_user
+from psycopg2.extras import Json as psycopg2_Json
 
 router = APIRouter(prefix="/evaluations", tags=["evaluations"])
 
@@ -16,18 +18,23 @@ class EvaluateRequest(BaseModel):
 
 @router.post("/")
 async def evaluate_application(body: EvaluateRequest, authorization: str = Header(...)):
-    sb = get_supabase()
-    user = sb.auth.get_user(authorization.removeprefix("Bearer "))
-    profile = sb.table("profiles").select("role").eq("id", user.user.id).single().execute()
+    user = await get_current_user(authorization)
+    user_id = user["id"]
 
-    if profile.data.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="관리자 권한 필요")
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT role FROM profiles WHERE id = %s", (user_id,))
+            profile = cur.fetchone()
 
-    application = sb.table("applications").select("*").eq("id", body.application_id).single().execute()
-    if not application.data:
-        raise HTTPException(status_code=404, detail="지원서 없음")
+            if not profile or profile["role"] != "admin":
+                raise HTTPException(status_code=403, detail="관리자 권한 필요")
 
-    app_data = application.data
+            cur.execute("SELECT * FROM applications WHERE id = %s", (body.application_id,))
+            app_data = cur.fetchone()
+
+            if not app_data:
+                raise HTTPException(status_code=404, detail="지원서 없음")
+
     text = "\n\n".join(f"{k}: {v}" for k, v in app_data["content"].items())
 
     async with httpx.AsyncClient(timeout=120) as client:
@@ -44,22 +51,37 @@ async def evaluate_application(body: EvaluateRequest, authorization: str = Heade
 
     eval_result = response.json()
 
-    saved = sb.table("evaluations").insert({
-        "application_id": body.application_id,
-        "evaluator_id": user.user.id,
-        "rubric_name": eval_result["rubric_name"],
-        "total_score": eval_result["total_score"],
-        "max_total": eval_result["max_total"],
-        "item_scores": eval_result["item_scores"],
-        "feedback": eval_result["feedback"],
-        "ai_generated": True,
-    }).execute()
-
-    return saved.data[0]
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO evaluations
+                    (application_id, evaluator_id, rubric_name, total_score,
+                     max_total, item_scores, feedback, ai_generated)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+                """,
+                (
+                    body.application_id,
+                    user_id,
+                    eval_result["rubric_name"],
+                    eval_result["total_score"],
+                    eval_result["max_total"],
+                    psycopg2_Json(eval_result["item_scores"]),
+                    eval_result["feedback"],
+                    True,
+                ),
+            )
+            conn.commit()
+            return cur.fetchone()
 
 
 @router.get("/{application_id}")
 async def get_evaluation(application_id: str, authorization: str = Header(...)):
-    sb = get_supabase()
-    result = sb.table("evaluations").select("*").eq("application_id", application_id).execute()
-    return result.data
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM evaluations WHERE application_id = %s",
+                (application_id,),
+            )
+            return cur.fetchall()

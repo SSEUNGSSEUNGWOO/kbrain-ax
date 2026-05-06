@@ -1,16 +1,15 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
+import { getLatestApplicationByUserId, getSelectionById } from "@/lib/db/actions"
 import { FileText, Loader2, PenLine, Clock, CheckCircle2, XCircle } from "lucide-react"
 import Link from "next/link"
 
 interface Application {
   id: string
   status: string
-  created_at: string
-  selection_id?: string
-  content?: Record<string, unknown>
+  createdAt: Date | null
+  selectionId: string | null
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string; icon: React.ElementType }> = {
@@ -20,27 +19,22 @@ const STATUS_MAP: Record<string, { label: string; color: string; icon: React.Ele
   fail:         { label: "불합격",    color: "text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20",             icon: XCircle },
 }
 
+// TODO: Replace with real user ID from auth when implemented
+const STUB_USER_ID = "00000000-0000-0000-0000-000000000000"
+
 export default function ApplicationPage() {
   const [application, setApplication] = useState<Application | null>(null)
   const [selectionTitle, setSelectionTitle] = useState<string>("")
   const [loading, setLoading] = useState(true)
-  const [showContent, setShowContent] = useState(false)
 
   useEffect(() => {
     async function load() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
+      const app = await getLatestApplicationByUserId(STUB_USER_ID)
+      setApplication(app as Application | null)
 
-      const { data: apps } = await supabase
-        .from("applications").select("*").eq("user_id", session.user.id)
-        .order("created_at", { ascending: false }).limit(1)
-
-      const app = apps?.[0] ?? null
-      setApplication(app)
-
-      if (app?.selection_id) {
-        const { data } = await supabase.from("selections").select("title").eq("id", app.selection_id).single()
-        if (data) setSelectionTitle(data.title)
+      if (app?.selectionId) {
+        const sel = await getSelectionById(app.selectionId)
+        if (sel) setSelectionTitle(sel.title)
       }
 
       setLoading(false)
@@ -77,7 +71,6 @@ export default function ApplicationPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {/* 요약 카드 */}
           <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700/50 flex items-center gap-2">
               <FileText className="h-4 w-4 text-blue-600" />
@@ -87,12 +80,12 @@ export default function ApplicationPage() {
             <div className="px-5 py-4 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500">전형</span>
-                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{selectionTitle || "—"}</span>
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{selectionTitle || "-"}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-slate-500">제출일</span>
                 <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                  {new Date(application.created_at).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" })}
+                  {application.createdAt ? new Date(application.createdAt).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" }) : "-"}
                 </span>
               </div>
               <div className="flex items-center justify-between">
@@ -110,31 +103,6 @@ export default function ApplicationPage() {
               </div>
             </div>
           </div>
-
-          {/* 지원서 내용 */}
-          {application.content && Object.keys(application.content).length > 0 && (
-            <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
-              <button
-                onClick={() => setShowContent(f => !f)}
-                className="w-full px-5 py-4 flex items-center justify-between text-sm font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
-              >
-                지원서 내용 보기
-                <span className="text-xs text-slate-400 font-normal">{showContent ? "접기" : "펼치기"}</span>
-              </button>
-              {showContent && (
-                <div className="border-t border-slate-100 dark:border-slate-700/50 px-5 py-4 space-y-4">
-                  {Object.entries(application.content).map(([key, value]) => (
-                    <div key={key}>
-                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">{key}</p>
-                      <p className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
-                        {typeof value === "string" ? value : JSON.stringify(value)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
     </div>

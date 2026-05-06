@@ -1,9 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter, usePathname } from "next/navigation"
-import { supabase } from "@/lib/supabase"
-import { LayoutDashboard, FileText, BookOpen, LogOut, Menu, X, User, Loader2 } from "lucide-react"
+import { LayoutDashboard, FileText, BookOpen, LogOut, Menu, X, User } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
 
@@ -16,34 +15,12 @@ const NAV = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const [user, setUser] = useState<{ name: string; email: string; avatar?: string } | null>(null)
-  const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
 
-  useEffect(() => {
-    async function init() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.replace("/signin"); return }
-
-      const { data: profile } = await supabase
-        .from("profiles").select("full_name").eq("id", session.user.id).single()
-      const meta = session.user.user_metadata
-      setUser({
-        name: profile?.full_name ?? meta?.full_name ?? meta?.name ?? session.user.email?.split("@")[0] ?? "지원자",
-        email: session.user.email ?? "",
-        avatar: meta?.avatar_url ?? meta?.picture,
-      })
-      setLoading(false)
-    }
-    init()
-  }, [router])
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
-      </div>
-    )
+  // Auth stub: skip auth check, show a placeholder user
+  const user = {
+    name: "지원자",
+    email: "user@kbrain.kr",
   }
 
   return (
@@ -70,15 +47,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <div className="px-4 py-3 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
-            {user?.avatar
-              ? <img src={user.avatar} alt={user.name} className="h-7 w-7 rounded-full object-cover flex-shrink-0" />
-              : <div className="h-7 w-7 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0">
-                  <User className="h-3.5 w-3.5 text-slate-300" />
-                </div>
-            }
+            <div className="h-7 w-7 rounded-full bg-slate-700 flex items-center justify-center flex-shrink-0">
+              <User className="h-3.5 w-3.5 text-slate-300" />
+            </div>
             <div className="min-w-0">
-              <p className="text-xs font-medium text-white truncate">{user?.name}</p>
-              <p className="text-[10px] text-slate-500 truncate">{user?.email}</p>
+              <p className="text-xs font-medium text-white truncate">{user.name}</p>
+              <p className="text-[10px] text-slate-500 truncate">{user.email}</p>
             </div>
           </div>
           <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-slate-700/50 border border-slate-600/30 px-1.5 py-0.5">
@@ -109,7 +83,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <div className="px-3 py-3 border-t border-slate-800">
           <button
-            onClick={async () => { await supabase.auth.signOut(); router.replace("/") }}
+            onClick={() => router.replace("/")}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all"
           >
             <LogOut className="h-4 w-4" />

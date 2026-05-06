@@ -1,6 +1,6 @@
 "use client";
 import { Menu } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   Sheet,
   SheetContent,
@@ -14,8 +14,6 @@ import { Button } from "../ui/button";
 import Link from "next/link";
 import Image from "next/image";
 import { ToggleTheme } from "./toogle-theme";
-import { supabase } from "@/lib/supabase";
-import type { User } from "@supabase/supabase-js";
 
 interface RouteProps {
   href: string;
@@ -31,20 +29,6 @@ const routeList: RouteProps[] = [
 
 export const Navbar = () => {
   const [isOpen, setIsOpen] = React.useState(false);
-  const [user, setUser] = useState<User | null>(null);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-  };
 
   return (
     <header className="w-full sticky top-0 z-40 border-b border-secondary bg-card/95 backdrop-blur-sm">
@@ -77,29 +61,9 @@ export const Navbar = () => {
 
           {/* 데스크탑 */}
           <div className="hidden lg:flex items-center gap-2">
-            {user ? (
-              <>
-                {user.user_metadata?.avatar_url && (
-                  <Image
-                    src={user.user_metadata.avatar_url}
-                    alt="profile"
-                    width={28}
-                    height={28}
-                    className="rounded-full"
-                  />
-                )}
-                <span className="text-sm font-medium whitespace-nowrap">
-                  {user.user_metadata?.full_name?.split(" ")[0] || user.email}
-                </span>
-                <Button size="sm" variant="ghost" onClick={handleLogout}>
-                  로그아웃
-                </Button>
-              </>
-            ) : (
-              <Button asChild size="sm">
-                <Link href="/signin">로그인</Link>
-              </Button>
-            )}
+            <Button asChild size="sm">
+              <Link href="/signin">로그인</Link>
+            </Button>
           </div>
 
           {/* 모바일 */}
@@ -125,15 +89,9 @@ export const Navbar = () => {
                       </Button>
                     ))}
                     <Separator className="my-2" />
-                    {user ? (
-                      <Button variant="ghost" className="justify-start text-base" onClick={handleLogout}>
-                        로그아웃
-                      </Button>
-                    ) : (
-                      <Button asChild className="justify-start text-base">
-                        <Link href="/signin">로그인</Link>
-                      </Button>
-                    )}
+                    <Button asChild className="justify-start text-base">
+                      <Link href="/signin">로그인</Link>
+                    </Button>
                   </div>
                 </div>
                 <SheetFooter className="flex-col sm:flex-col justify-start items-start">

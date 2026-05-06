@@ -1,6 +1,3 @@
-import { createBrowserClient } from '@supabase/ssr'
-
-export const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+// Supabase has been removed. Auth will be implemented later.
+// DB access now uses Drizzle ORM — see lib/db/index.ts
+export const createClient = () => null;

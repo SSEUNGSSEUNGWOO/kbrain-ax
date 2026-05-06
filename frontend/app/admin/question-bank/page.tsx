@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
+import { getAllQuestions, insertQuestion, deleteQuestion } from "@/lib/db/actions"
 import { Plus, BookMarked, Trash2, ChevronDown, Loader2 } from "lucide-react"
 
 interface Question {
@@ -10,10 +10,10 @@ interface Question {
   category: string
   difficulty: string
   type: string
-  options: string[] | null
-  correct_answer: string | null
+  options: unknown
+  correctAnswer: string
   explanation: string | null
-  created_at: string
+  createdAt: Date | null
 }
 
 const DIFFICULTY_STYLE: Record<string, string> = {
@@ -47,26 +47,34 @@ export default function QuestionBankPage() {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const { data } = await supabase.from("question_bank").select("*").order("created_at", { ascending: false })
-    setQuestions((data ?? []) as Question[])
+    const data = await getAllQuestions()
+    setQuestions(data as Question[])
     setLoading(false)
   }
 
   async function handleAdd() {
     if (!form.content.trim()) return
     setAdding(true)
-    const payload: Record<string, unknown> = {
+    const payload: {
+      content: string
+      category: string
+      difficulty: string
+      type: string
+      options?: unknown
+      correctAnswer: string | null
+      explanation: string | null
+    } = {
       content: form.content.trim(),
       category: form.category.trim() || "일반",
       difficulty: form.difficulty,
       type: form.type,
       explanation: form.explanation.trim() || null,
-      correct_answer: form.correct_answer.trim() || null,
+      correctAnswer: form.correct_answer.trim() || null,
     }
     if (form.type === "객관식") {
       payload.options = form.options.filter(o => o.trim())
     }
-    const { data } = await supabase.from("question_bank").insert(payload).select().single()
+    const data = await insertQuestion(payload)
     if (data) {
       setQuestions(prev => [data as Question, ...prev])
       setForm({ content: "", category: "", difficulty: "중", type: "객관식", options: ["", "", "", ""], correct_answer: "", explanation: "" })
@@ -76,7 +84,7 @@ export default function QuestionBankPage() {
   }
 
   async function handleDelete(id: string) {
-    await supabase.from("question_bank").delete().eq("id", id)
+    await deleteQuestion(id)
     setQuestions(prev => prev.filter(q => q.id !== id))
   }
 
@@ -90,7 +98,6 @@ export default function QuestionBankPage() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-slate-900 dark:text-white">문제 은행</h1>
@@ -105,7 +112,6 @@ export default function QuestionBankPage() {
         </button>
       </div>
 
-      {/* 추가 폼 */}
       {showForm && (
         <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-blue-200 dark:border-blue-800/50 p-5 space-y-4">
           <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">새 문제 추가</p>
@@ -202,7 +208,6 @@ export default function QuestionBankPage() {
         </div>
       )}
 
-      {/* 필터 */}
       <div className="flex flex-wrap gap-2">
         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
           className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -230,7 +235,6 @@ export default function QuestionBankPage() {
         )}
       </div>
 
-      {/* 목록 */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
@@ -244,10 +248,10 @@ export default function QuestionBankPage() {
         <div className="space-y-3">
           {filtered.map((q, idx) => {
             const isOpen = expandedQ === q.id
+            const opts = Array.isArray(q.options) ? q.options as string[] : null
             return (
               <div key={q.id} className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
                 <div className="px-5 py-4">
-                  {/* 메타 + 번호 */}
                   <div className="flex items-center gap-2 mb-3">
                     <span className="text-xs font-bold text-slate-400 tabular-nums">Q{idx + 1}</span>
                     <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${TYPE_STYLE[q.type] ?? "bg-slate-100 text-slate-500"}`}>
@@ -263,29 +267,22 @@ export default function QuestionBankPage() {
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
-
-                  {/* 문제 본문 */}
                   <p className="text-sm font-medium text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap">{q.content}</p>
-
-                  {/* 열기 버튼 */}
-                  {(q.options?.length || q.correct_answer || q.explanation) ? (
+                  {(opts?.length || q.correctAnswer || q.explanation) ? (
                     <button
                       onClick={() => setExpandedQ(isOpen ? null : q.id)}
                       className="mt-3 flex items-center gap-1 text-xs text-slate-400 hover:text-blue-500 transition-colors"
                     >
                       <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`} />
-                      {isOpen ? "접기" : (q.type === "객관식" ? "보기 · 해설 보기" : q.type === "OX" ? "정답 보기" : q.type === "단답형" ? "정답 보기" : "채점 기준 보기")}
+                      {isOpen ? "접기" : (q.type === "객관식" ? "보기 / 해설 보기" : q.type === "OX" ? "정답 보기" : q.type === "단답형" ? "정답 보기" : "채점 기준 보기")}
                     </button>
                   ) : null}
                 </div>
 
-                {/* 확장 영역 — 타입별 */}
                 {isOpen && (
                   <div className="border-t border-slate-100 dark:border-slate-700/40 px-5 py-4 bg-slate-50/60 dark:bg-slate-900/30 space-y-3">
-
-                    {/* 객관식 */}
-                    {q.type === "객관식" && q.options?.map((opt, i) => {
-                      const isCorrect = String(i + 1) === q.correct_answer
+                    {q.type === "객관식" && opts?.map((opt, i) => {
+                      const isCorrect = String(i + 1) === q.correctAnswer
                       return (
                         <div key={i} className={`flex items-start gap-3 rounded-lg px-3 py-2.5 ${isCorrect ? "bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/50" : "bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/30"}`}>
                           <span className={`flex-shrink-0 h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold ${isCorrect ? "bg-emerald-500 text-white" : "bg-slate-100 dark:bg-slate-700 text-slate-500"}`}>{i + 1}</span>
@@ -293,37 +290,29 @@ export default function QuestionBankPage() {
                         </div>
                       )
                     })}
-
-                    {/* OX */}
-                    {q.type === "OX" && q.correct_answer && (
-                      <div className={`inline-flex items-center justify-center h-12 w-12 rounded-xl text-2xl font-black ${q.correct_answer === "O" ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" : "bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-400"}`}>
-                        {q.correct_answer}
+                    {q.type === "OX" && q.correctAnswer && (
+                      <div className={`inline-flex items-center justify-center h-12 w-12 rounded-xl text-2xl font-black ${q.correctAnswer === "O" ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400" : "bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-400"}`}>
+                        {q.correctAnswer}
                       </div>
                     )}
-
-                    {/* 단답형 */}
-                    {q.type === "단답형" && q.correct_answer && (
+                    {q.type === "단답형" && q.correctAnswer && (
                       <div className="rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/50 px-4 py-3">
                         <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1">정답</p>
-                        <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">{q.correct_answer}</p>
+                        <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">{q.correctAnswer}</p>
                       </div>
                     )}
-
-                    {/* 서술형 / 코딩 — 채점 기준 */}
-                    {(q.type === "서술형" || q.type === "코딩") && q.correct_answer && q.correct_answer !== "수동채점" && (
+                    {(q.type === "서술형" || q.type === "코딩") && q.correctAnswer && q.correctAnswer !== "수동채점" && (
                       <div className="rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/50 px-4 py-3">
                         <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1">정답 / 모범 답안</p>
-                        <p className="text-sm text-emerald-700 dark:text-emerald-300 whitespace-pre-wrap leading-relaxed">{q.correct_answer}</p>
+                        <p className="text-sm text-emerald-700 dark:text-emerald-300 whitespace-pre-wrap leading-relaxed">{q.correctAnswer}</p>
                       </div>
                     )}
-                    {(q.type === "서술형" || q.type === "코딩") && q.correct_answer === "수동채점" && (
+                    {(q.type === "서술형" || q.type === "코딩") && q.correctAnswer === "수동채점" && (
                       <div className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 dark:bg-slate-700 px-3 py-1.5">
                         <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
                         <span className="text-xs font-medium text-slate-500 dark:text-slate-400">수동 채점 문항</span>
                       </div>
                     )}
-
-                    {/* 해설 / 채점 기준 (공통) */}
                     {q.explanation && (
                       <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/40 px-4 py-3">
                         <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-2">

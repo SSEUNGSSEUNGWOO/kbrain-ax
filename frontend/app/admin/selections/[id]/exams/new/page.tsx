@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
-import { supabase } from "@/lib/supabase"
+import { getAllQuestions, createExam, insertExamQuestions } from "@/lib/db/actions"
 import {
-  ArrowLeft, Search, Plus, X, GripVertical, Loader2, CheckSquare, Square
+  ArrowLeft, Search, Plus, X, Loader2, CheckSquare, Square
 } from "lucide-react"
 import Link from "next/link"
 
@@ -12,10 +12,10 @@ interface Question {
   id: string
   content: string
   category: string
-  difficulty: "하" | "중" | "상"
-  type: "객관식" | "OX" | "단답형" | "서술형" | "코딩"
-  options: string[] | null
-  correct_answer: string | null
+  difficulty: string
+  type: string
+  options: unknown
+  correctAnswer: string
   explanation: string | null
 }
 
@@ -67,14 +67,10 @@ export default function NewExamPage() {
 
   async function fetchQuestions() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from("question_bank")
-      .select("*")
-      .order("created_at", { ascending: false })
-
-    if (!error && data) {
-      setQuestions(data)
-      const cats = Array.from(new Set(data.map((q: Question) => q.category).filter(Boolean)))
+    const data = await getAllQuestions()
+    if (data) {
+      setQuestions(data as Question[])
+      const cats = Array.from(new Set(data.map((q) => q.category).filter(Boolean)))
       setCategories(cats)
     }
     setLoading(false)
@@ -143,37 +139,29 @@ export default function NewExamPage() {
 
     setSaving(true)
     try {
-      const { data: examData, error: examError } = await supabase
-        .from("exams")
-        .insert({
-          title: title.trim(),
-          description: description.trim(),
-          time_limit_minutes: timeLimitMinutes,
-          passing_score: passingScore,
-          selection_id: selectionId,
-          is_active: true,
-        })
-        .select()
-        .single()
+      const examData = await createExam({
+        title: title.trim(),
+        description: description.trim(),
+        timeLimitMinutes,
+        passingScore,
+        selectionId,
+        isActive: true,
+      })
 
-      if (examError) throw examError
+      if (!examData) throw new Error("시험 생성 실패")
 
-      const examQuestions = selectedQuestions.map((sq) => ({
-        exam_id: examData.id,
-        question_id: sq.question.id,
-        order_index: sq.order_index,
+      const eqData = selectedQuestions.map((sq) => ({
+        examId: examData.id,
+        questionId: sq.question.id,
+        orderIndex: sq.order_index,
         points: sq.points,
       }))
 
-      const { error: eqError } = await supabase
-        .from("exam_questions")
-        .insert(examQuestions)
-
-      if (eqError) throw eqError
+      await insertExamQuestions(eqData)
 
       router.push(`/admin/selections/${selectionId}`)
-    } catch (err: any) {
-      alert(`저장 중 오류가 발생했습니다: ${err.message}`)
+    } catch (err: unknown) {
+      alert(`저장 중 오류가 발생했습니다: ${(err as Error).message}`)
     } finally {
       setSaving(false)
     }
@@ -184,7 +172,6 @@ export default function NewExamPage() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <Link
             href={`/admin/selections/${selectionId}`}
@@ -199,7 +186,6 @@ export default function NewExamPage() {
           새 시험 만들기
         </h1>
 
-        {/* Exam Info Form */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 mb-6">
           <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4">
             시험 기본 정보
@@ -258,13 +244,11 @@ export default function NewExamPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          {/* Question Bank */}
           <div className="lg:col-span-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
             <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4">
               문제 은행
             </h2>
 
-            {/* Filters */}
             <div className="flex flex-wrap gap-2 mb-4">
               <div className="relative">
                 <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" />
@@ -276,39 +260,23 @@ export default function NewExamPage() {
                   className="pl-8 pr-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 w-44"
                 />
               </div>
-              <select
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
+              <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
+                className="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">전체 카테고리</option>
-                {categories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
+                {categories.map((c) => (<option key={c} value={c}>{c}</option>))}
               </select>
-              <select
-                value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
+              <select value={filterType} onChange={(e) => setFilterType(e.target.value)}
+                className="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">전체 유형</option>
-                {["객관식", "OX", "단답형", "서술형", "코딩"].map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
+                {["객관식", "OX", "단답형", "서술형", "코딩"].map((t) => (<option key={t} value={t}>{t}</option>))}
               </select>
-              <select
-                value={filterDifficulty}
-                onChange={(e) => setFilterDifficulty(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
+              <select value={filterDifficulty} onChange={(e) => setFilterDifficulty(e.target.value)}
+                className="px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="">전체 난이도</option>
-                {["하", "중", "상"].map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
+                {["하", "중", "상"].map((d) => (<option key={d} value={d}>{d}</option>))}
               </select>
             </div>
 
-            {/* Question List */}
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
@@ -332,28 +300,16 @@ export default function NewExamPage() {
                       }`}
                     >
                       <div className="mt-0.5 shrink-0 text-blue-500">
-                        {selected ? (
-                          <CheckSquare className="w-4 h-4" />
-                        ) : (
-                          <Square className="w-4 h-4 text-slate-400" />
-                        )}
+                        {selected ? (<CheckSquare className="w-4 h-4" />) : (<Square className="w-4 h-4 text-slate-400" />)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-slate-800 dark:text-slate-100 line-clamp-2">
-                          {q.content}
-                        </p>
+                        <p className="text-sm text-slate-800 dark:text-slate-100 line-clamp-2">{q.content}</p>
                         <div className="flex flex-wrap gap-1.5 mt-1.5">
                           {q.category && (
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                              {q.category}
-                            </span>
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">{q.category}</span>
                           )}
-                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_COLOR[q.type]}`}>
-                            {q.type}
-                          </span>
-                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${DIFFICULTY_COLOR[q.difficulty]}`}>
-                            난이도 {q.difficulty}
-                          </span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_COLOR[q.type] ?? ""}`}>{q.type}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${DIFFICULTY_COLOR[q.difficulty] ?? ""}`}>난이도 {q.difficulty}</span>
                         </div>
                       </div>
                     </div>
@@ -363,61 +319,33 @@ export default function NewExamPage() {
             )}
           </div>
 
-          {/* Selected Questions Panel */}
           <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 flex flex-col">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">
-                선택된 문제
-              </h2>
-              <div className="text-xs text-slate-500 dark:text-slate-400">
-                {selectedQuestions.length}문제 · 총 {totalPoints}점
-              </div>
+              <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">선택된 문제</h2>
+              <div className="text-xs text-slate-500 dark:text-slate-400">{selectedQuestions.length}문제 - 총 {totalPoints}점</div>
             </div>
 
             {selectedQuestions.length === 0 ? (
               <div className="flex-1 flex items-center justify-center">
-                <p className="text-sm text-slate-400 dark:text-slate-500 text-center">
-                  왼쪽에서 문제를 선택하세요
-                </p>
+                <p className="text-sm text-slate-400 dark:text-slate-500 text-center">왼쪽에서 문제를 선택하세요</p>
               </div>
             ) : (
               <div className="flex-1 space-y-2 max-h-[480px] overflow-y-auto pr-1">
                 {selectedQuestions.map((sq, index) => (
-                  <div
-                    key={sq.question.id}
-                    className="flex items-start gap-2 p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50"
-                  >
+                  <div key={sq.question.id} className="flex items-start gap-2 p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                     <div className="flex flex-col gap-0.5 shrink-0">
-                      <button
-                        onClick={() => moveQuestion(index, "up")}
-                        disabled={index === 0}
-                        className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 disabled:opacity-30"
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                        </svg>
+                      <button onClick={() => moveQuestion(index, "up")} disabled={index === 0} className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 disabled:opacity-30">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
                       </button>
-                      <span className="text-xs text-slate-500 dark:text-slate-400 text-center font-mono">
-                        {index + 1}
-                      </span>
-                      <button
-                        onClick={() => moveQuestion(index, "down")}
-                        disabled={index === selectedQuestions.length - 1}
-                        className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 disabled:opacity-30"
-                      >
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
+                      <span className="text-xs text-slate-500 dark:text-slate-400 text-center font-mono">{index + 1}</span>
+                      <button onClick={() => moveQuestion(index, "down")} disabled={index === selectedQuestions.length - 1} className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 disabled:opacity-30">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                       </button>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-slate-700 dark:text-slate-200 line-clamp-2">
-                        {sq.question.content}
-                      </p>
+                      <p className="text-xs text-slate-700 dark:text-slate-200 line-clamp-2">{sq.question.content}</p>
                       <div className="flex items-center gap-2 mt-1.5">
-                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_COLOR[sq.question.type]}`}>
-                          {sq.question.type}
-                        </span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_COLOR[sq.question.type] ?? ""}`}>{sq.question.type}</span>
                         <div className="flex items-center gap-1 ml-auto">
                           <label className="text-xs text-slate-500 dark:text-slate-400">점수</label>
                           <input
@@ -431,10 +359,7 @@ export default function NewExamPage() {
                         </div>
                       </div>
                     </div>
-                    <button
-                      onClick={() => removeSelected(sq.question.id)}
-                      className="shrink-0 p-1 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-                    >
+                    <button onClick={() => removeSelected(sq.question.id)} className="shrink-0 p-1 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -448,17 +373,7 @@ export default function NewExamPage() {
                 disabled={saving || !title.trim() || selectedQuestions.length === 0}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 dark:disabled:bg-blue-900 text-white font-medium text-sm transition-colors"
               >
-                {saving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    저장 중...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="w-4 h-4" />
-                    시험 저장
-                  </>
-                )}
+                {saving ? (<><Loader2 className="w-4 h-4 animate-spin" />저장 중...</>) : (<><Plus className="w-4 h-4" />시험 저장</>)}
               </button>
             </div>
           </div>

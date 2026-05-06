@@ -1,21 +1,21 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
-import { Plus, ChevronRight, FileText, Clock, CheckCircle2, XCircle, Loader2 } from "lucide-react"
+import { getSelections, createSelection } from "@/lib/db/actions"
+import { Plus, ChevronRight, FileText, Clock, Loader2 } from "lucide-react"
 import Link from "next/link"
 
 interface Selection {
   id: string
   title: string
-  description: string
+  description: string | null
   status: string
-  apply_start: string
-  apply_end: string
-  has_written_eval: boolean
-  has_exam: boolean
-  exam_first: boolean
-  created_at: string
+  applyStart: Date | null
+  applyEnd: Date | null
+  hasWrittenEval: boolean
+  hasExam: boolean
+  examFirst: boolean
+  createdAt: Date | null
 }
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
@@ -41,11 +41,8 @@ export default function SelectionsPage() {
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase
-        .from("selections")
-        .select("*")
-        .order("created_at", { ascending: false })
-      setSelections((data ?? []) as Selection[])
+      const data = await getSelections()
+      setSelections(data as Selection[])
       setLoading(false)
     }
     load()
@@ -53,20 +50,7 @@ export default function SelectionsPage() {
 
   async function handleCreate() {
     setCreating(true)
-    const { data, error } = await supabase
-      .from("selections")
-      .insert({
-        title: "새 선발 전형",
-        description: "",
-        status: "draft",
-        apply_start: new Date().toISOString(),
-        apply_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        has_written_eval: true,
-        has_exam: false,
-        exam_first: false,
-      })
-      .select()
-      .single()
+    const data = await createSelection()
     setCreating(false)
     if (data) {
       setSelections(prev => [data as Selection, ...prev])
@@ -117,14 +101,14 @@ export default function SelectionsPage() {
                     <div className="flex items-center gap-3 text-xs text-slate-400">
                       <span className="flex items-center gap-1">
                         <Clock className="h-3 w-3" />
-                        {new Date(sel.apply_start).toLocaleDateString("ko-KR")} –{" "}
-                        {new Date(sel.apply_end).toLocaleDateString("ko-KR")}
+                        {sel.applyStart ? new Date(sel.applyStart).toLocaleDateString("ko-KR") : "-"} –{" "}
+                        {sel.applyEnd ? new Date(sel.applyEnd).toLocaleDateString("ko-KR") : "-"}
                       </span>
                       <span className="flex items-center gap-1.5">
-                        {sel.has_written_eval && (
+                        {sel.hasWrittenEval && (
                           <span className="inline-flex items-center gap-0.5 rounded bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:text-slate-400">서면심사</span>
                         )}
-                        {sel.has_exam && (
+                        {sel.hasExam && (
                           <span className="inline-flex items-center gap-0.5 rounded bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:text-slate-400">온라인시험</span>
                         )}
                       </span>

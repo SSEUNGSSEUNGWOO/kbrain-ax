@@ -1,10 +1,16 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
+import {
+  getRecentSelections,
+  getAllApplications,
+  getAllExamAttemptScores,
+  getRecentActivityLogs,
+  getProfilesByIds,
+} from "@/lib/db/actions"
 import {
   Users, FileText, CheckCircle2, Clock, ChevronRight,
-  TrendingUp, TrendingDown, BookOpen, Award
+  BookOpen, Award
 } from "lucide-react"
 import Link from "next/link"
 import {
@@ -16,7 +22,7 @@ interface Selection {
   id: string
   title: string
   status: string
-  apply_end: string
+  applyEnd: Date | null
 }
 
 interface Stats {
@@ -26,17 +32,12 @@ interface Stats {
   under_review: number
 }
 
-interface AttemptRow {
-  score: number
-}
-
 interface ActivityRow {
   id: string
-  user_id: string
-  event_type: string
-  created_at: string
-  metadata?: Record<string, unknown>
-  profiles?: { full_name?: string; email?: string } | null
+  userId: string
+  eventType: string
+  createdAt: Date
+  metadata?: Record<string, unknown> | null
 }
 
 export default function AdminDashboard() {
@@ -50,32 +51,33 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     async function load() {
-      const [selRes, appRes, attemptRes, activityRes] = await Promise.all([
-        supabase.from("selections").select("id, title, status, apply_end").order("created_at", { ascending: false }).limit(3),
-        supabase.from("applications").select("status, created_at"),
-        supabase.from("exam_attempts").select("score"),
-        supabase.from("activity_logs").select("id, user_id, event_type, created_at, metadata").order("created_at", { ascending: false }).limit(5),
+      const [selData, appData, attemptData, activityData] = await Promise.all([
+        getRecentSelections(3),
+        getAllApplications(),
+        getAllExamAttemptScores(),
+        getRecentActivityLogs(5),
       ])
 
-      const apps = appRes.data ?? []
-      const attempts = (attemptRes.data ?? []) as AttemptRow[]
+      const apps = appData ?? []
+      const attempts = attemptData ?? []
 
-      // 스탯
       setStats({
-        selections: selRes.data?.length ?? 0,
+        selections: selData?.length ?? 0,
         applications: apps.length,
         passed: apps.filter(a => a.status === "pass").length,
         under_review: apps.filter(a => a.status === "under_review").length,
       })
 
-      setRecentSelections((selRes.data ?? []) as Selection[])
+      setRecentSelections(selData as Selection[])
 
       // 지원자 누적 추이 (7일 단위 버킷)
       if (apps.length > 0) {
-        const sorted = [...apps].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        const sorted = [...apps].sort(
+          (a, b) => new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime()
+        )
         const buckets: Record<string, number> = {}
         sorted.forEach(a => {
-          const d = new Date(a.created_at)
+          const d = new Date(a.createdAt!)
           const key = `${d.getMonth() + 1}/${Math.ceil(d.getDate() / 7) * 7}`
           buckets[key] = (buckets[key] ?? 0) + 1
         })
@@ -87,15 +89,15 @@ export default function AdminDashboard() {
       // 시험 점수 분포
       if (attempts.length > 0) {
         const ranges = [
-          { range: "0–39",  min: 0,  max: 39  },
-          { range: "40–59", min: 40, max: 59  },
-          { range: "60–79", min: 60, max: 79  },
-          { range: "80–89", min: 80, max: 89  },
-          { range: "90–100",min: 90, max: 100 },
+          { range: "0-39",  min: 0,  max: 39  },
+          { range: "40-59", min: 40, max: 59  },
+          { range: "60-79", min: 60, max: 79  },
+          { range: "80-89", min: 80, max: 89  },
+          { range: "90-100",min: 90, max: 100 },
         ]
         setScoreDistribution(ranges.map(r => ({
           range: r.range,
-          count: attempts.filter(a => a.score >= r.min && a.score <= r.max).length,
+          count: attempts.filter(a => (a.score ?? 0) >= r.min && (a.score ?? 0) <= r.max).length,
         })))
       }
 
@@ -112,15 +114,14 @@ export default function AdminDashboard() {
           .filter(s => s.value > 0)
       )
 
-      const activities = (activityRes.data ?? []) as ActivityRow[]
+      const activities = activityData as ActivityRow[]
       setRecentActivity(activities)
 
-      const uniqUserIds = Array.from(new Set(activities.map(a => a.user_id)))
+      const uniqUserIds = Array.from(new Set(activities.map(a => a.userId)))
       if (uniqUserIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from("profiles").select("id,full_name").in("id", uniqUserIds)
-        if (profiles) {
-          setProfileMap(Object.fromEntries(profiles.map(p => [p.id, p.full_name ?? ""])))
+        const profilesData = await getProfilesByIds(uniqUserIds)
+        if (profilesData) {
+          setProfileMap(Object.fromEntries(profilesData.map(p => [p.id, p.fullName ?? ""])))
         }
       }
     }
@@ -128,10 +129,10 @@ export default function AdminDashboard() {
   }, [])
 
   const statCards = [
-    { label: "총 지원자", value: stats.applications, icon: Users,        color: "text-blue-500",    bg: "bg-blue-50 dark:bg-blue-900/20",       trend: null },
-    { label: "서면 합격", value: stats.passed,        icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-900/20", trend: null },
-    { label: "검토 중",   value: stats.under_review,  icon: Clock,        color: "text-amber-500",   bg: "bg-amber-50 dark:bg-amber-900/20",     trend: null },
-    { label: "시험 응시", value: stats.selections,    icon: BookOpen,     color: "text-purple-500",  bg: "bg-purple-50 dark:bg-purple-900/20",   trend: null },
+    { label: "총 지원자", value: stats.applications, icon: Users,        color: "text-blue-500",    bg: "bg-blue-50 dark:bg-blue-900/20" },
+    { label: "서면 합격", value: stats.passed,        icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-900/20" },
+    { label: "검토 중",   value: stats.under_review,  icon: Clock,        color: "text-amber-500",   bg: "bg-amber-50 dark:bg-amber-900/20" },
+    { label: "시험 응시", value: stats.selections,    icon: BookOpen,     color: "text-purple-500",  bg: "bg-purple-50 dark:bg-purple-900/20" },
   ]
 
   const eventLabel: Record<string, string> = {
@@ -152,7 +153,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-slate-900 dark:text-white">대시보드</h1>
@@ -160,7 +160,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* 스탯 카드 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map(s => (
           <div key={s.label} className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4">
@@ -175,7 +174,6 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* 차트 */}
       {(applicationTrend.length > 0 || statusPie.length > 0) && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {applicationTrend.length > 0 && (
@@ -227,7 +225,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* 점수 분포 + 최근 활동 */}
       {(scoreDistribution.some(s => s.count > 0) || recentActivity.length > 0) && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {scoreDistribution.some(s => s.count > 0) && (
@@ -255,8 +252,8 @@ export default function AdminDashboard() {
               </div>
               <ul className="divide-y divide-slate-100 dark:divide-slate-700/40">
                 {recentActivity.map(a => {
-                  const name = profileMap[a.user_id] || a.user_id.slice(0, 8) + "…"
-                  const initial = (profileMap[a.user_id] ?? a.user_id).slice(0, 1).toUpperCase()
+                  const name = profileMap[a.userId] || a.userId.slice(0, 8) + "..."
+                  const initial = (profileMap[a.userId] ?? a.userId).slice(0, 1).toUpperCase()
                   return (
                     <li key={a.id} className="px-5 py-3 flex items-center gap-3">
                       <div className="h-7 w-7 rounded-full bg-blue-500 flex items-center justify-center shrink-0 text-xs font-bold text-white">
@@ -264,12 +261,12 @@ export default function AdminDashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">
-                          {eventLabel[a.event_type] ?? a.event_type}
+                          {eventLabel[a.eventType] ?? a.eventType}
                         </p>
                         <p className="text-xs text-slate-400 truncate">{name}</p>
                       </div>
                       <span className="text-[10px] text-slate-400 shrink-0">
-                        {new Date(a.created_at).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
+                        {new Date(a.createdAt).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" })}
                       </span>
                     </li>
                   )
@@ -280,7 +277,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* 선발 전형 */}
       <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -306,7 +302,7 @@ export default function AdminDashboard() {
                 >
                   <div>
                     <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{sel.title}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">마감 {new Date(sel.apply_end).toLocaleDateString("ko-KR")}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">마감 {sel.applyEnd ? new Date(sel.applyEnd).toLocaleDateString("ko-KR") : "-"}</p>
                   </div>
                   <ChevronRight className="h-4 w-4 text-slate-300" />
                 </Link>

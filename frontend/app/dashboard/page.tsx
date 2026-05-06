@@ -1,7 +1,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
+import {
+  getLatestApplicationByUserId,
+  getSelectionById,
+  getExamAttemptsByUserIdWithExamTitle,
+} from "@/lib/db/actions"
 import {
   CheckCircle2, Clock, XCircle, Loader2, PenLine,
   BookOpen, ChevronRight, AlertCircle, Trophy, CalendarDays
@@ -11,36 +15,39 @@ import Link from "next/link"
 interface Selection {
   id: string
   title: string
-  has_written_eval: boolean
-  has_exam: boolean
-  exam_first: boolean
+  hasWrittenEval: boolean
+  hasExam: boolean
+  examFirst: boolean
 }
 
 interface Application {
   id: string
   status: string
-  created_at: string
-  selection_id?: string
+  createdAt: Date | null
+  selectionId: string | null
 }
 
 interface Attempt {
   id: string
-  exam_id: string
-  score: number
-  is_passed: boolean
-  submitted_at: string
-  exam?: { title: string }
+  examId: string
+  score: number | null
+  isPassed: boolean | null
+  submittedAt: Date | null
+  examTitle: string | null
 }
+
+// TODO: Replace with real user ID from auth when implemented
+const STUB_USER_ID = "00000000-0000-0000-0000-000000000000"
 
 function buildSteps(sel: Selection | null) {
   const steps = [{ key: "submitted", label: "지원서 제출" }]
   if (!sel) { steps.push({ key: "final", label: "최종 결과" }); return steps }
-  if (sel.exam_first) {
-    if (sel.has_exam) steps.push({ key: "exam", label: "온라인 시험" })
-    if (sel.has_written_eval) steps.push({ key: "under_review", label: "서면 심사" }, { key: "pass", label: "심사 통과" })
+  if (sel.examFirst) {
+    if (sel.hasExam) steps.push({ key: "exam", label: "온라인 시험" })
+    if (sel.hasWrittenEval) steps.push({ key: "under_review", label: "서면 심사" }, { key: "pass", label: "심사 통과" })
   } else {
-    if (sel.has_written_eval) steps.push({ key: "under_review", label: "서면 심사" }, { key: "pass", label: "심사 통과" })
-    if (sel.has_exam) steps.push({ key: "exam", label: "온라인 시험" })
+    if (sel.hasWrittenEval) steps.push({ key: "under_review", label: "서면 심사" }, { key: "pass", label: "심사 통과" })
+    if (sel.hasExam) steps.push({ key: "exam", label: "온라인 시험" })
   }
   steps.push({ key: "final", label: "최종 결과" })
   return steps
@@ -75,7 +82,7 @@ function NextAction({ status, hasExam }: { status: string; hasExam: boolean }) {
         <div className="flex items-start gap-3 mb-3">
           <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">서면 심사 합격 — 온라인 시험 응시 가능</p>
+            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">서면 심사 합격 - 온라인 시험 응시 가능</p>
             <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">아래 버튼을 눌러 지금 바로 시험에 응시하세요.</p>
           </div>
         </div>
@@ -123,29 +130,18 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
+      const app = await getLatestApplicationByUserId(STUB_USER_ID)
+      setApplication(app as Application | null)
 
-      const { data: apps } = await supabase
-        .from("applications").select("*").eq("user_id", session.user.id)
-        .order("created_at", { ascending: false }).limit(1)
-
-      const app = apps?.[0] ?? null
-      setApplication(app)
-
-      const [selRes, attRes] = await Promise.all([
-        app?.selection_id
-          ? supabase.from("selections").select("id, title, has_written_eval, has_exam, exam_first").eq("id", app.selection_id).single()
-          : Promise.resolve({ data: null }),
-        supabase.from("exam_attempts")
-          .select("id, exam_id, score, is_passed, submitted_at, exam:exams(title)")
-          .eq("user_id", session.user.id)
-          .order("submitted_at", { ascending: false })
-          .limit(3),
+      const [selData, attData] = await Promise.all([
+        app?.selectionId
+          ? getSelectionById(app.selectionId)
+          : Promise.resolve(null),
+        getExamAttemptsByUserIdWithExamTitle(STUB_USER_ID, 3),
       ])
 
-      if (selRes.data) setSelection(selRes.data as Selection)
-      if (attRes.data) setAttempts(attRes.data as Attempt[])
+      if (selData) setSelection(selData as unknown as Selection)
+      if (attData) setAttempts(attData as Attempt[])
 
       setLoading(false)
     }
@@ -190,10 +186,8 @@ export default function DashboardPage() {
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{selection?.title ?? "선발 전형"} 진행 현황입니다.</p>
       </div>
 
-      {/* 다음 할 일 */}
-      <NextAction status={application.status} hasExam={selection?.has_exam ?? false} />
+      <NextAction status={application.status} hasExam={selection?.hasExam ?? false} />
 
-      {/* 진행 단계 */}
       <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 p-5">
         <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-5">전형 단계</p>
         <div className="flex items-center w-full">
@@ -229,7 +223,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 시험 결과 요약 */}
       {attempts.length > 0 && (
         <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
           <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
@@ -243,26 +236,26 @@ export default function DashboardPage() {
             {attempts.map((att) => (
               <div key={att.id} className="px-5 py-3.5 flex items-center gap-3">
                 <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${
-                  att.is_passed ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-red-100 dark:bg-red-900/30"
+                  att.isPassed ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-red-100 dark:bg-red-900/30"
                 }`}>
-                  {att.is_passed
+                  {att.isPassed
                     ? <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                     : <XCircle className="h-4 w-4 text-red-500 dark:text-red-400" />
                   }
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
-                    {(att.exam as unknown as { title: string })?.title ?? "시험"}
+                    {att.examTitle ?? "시험"}
                   </p>
                   <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
                     <CalendarDays className="h-3 w-3" />
-                    {new Date(att.submitted_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}
+                    {att.submittedAt ? new Date(att.submittedAt).toLocaleDateString("ko-KR", { month: "long", day: "numeric" }) : "-"}
                   </p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">{att.score}<span className="text-xs font-normal text-slate-400 ml-0.5">점</span></p>
-                  <p className={`text-xs font-semibold ${att.is_passed ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
-                    {att.is_passed ? "합격" : "불합격"}
+                  <p className="text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">{att.score ?? 0}<span className="text-xs font-normal text-slate-400 ml-0.5">점</span></p>
+                  <p className={`text-xs font-semibold ${att.isPassed ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"}`}>
+                    {att.isPassed ? "합격" : "불합격"}
                   </p>
                 </div>
               </div>
@@ -271,12 +264,11 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 지원 정보 요약 */}
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4">
           <p className="text-xs text-slate-400 mb-1">지원서 제출일</p>
           <p className="font-semibold text-slate-800 dark:text-slate-200">
-            {new Date(application.created_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}
+            {application.createdAt ? new Date(application.createdAt).toLocaleDateString("ko-KR", { month: "long", day: "numeric" }) : "-"}
           </p>
         </div>
         <Link href="/dashboard/application" className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 p-4 hover:border-blue-300 dark:hover:border-blue-700 transition-colors group flex flex-col justify-between">

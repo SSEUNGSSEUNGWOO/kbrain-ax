@@ -2,8 +2,13 @@
 
 import { useEffect, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
-import { supabase } from "@/lib/supabase"
 import { api } from "@/lib/api"
+import {
+  getSelectionById,
+  getApplicationsBySelectionId,
+  getExamsBySelectionId,
+  updateApplicationStatus,
+} from "@/lib/db/actions"
 import {
   Loader2, ArrowLeft, FileText, BookOpen,
   Sparkles, CheckCircle2, XCircle, Clock, Users, Eye
@@ -13,30 +18,30 @@ import Link from "next/link"
 interface Selection {
   id: string
   title: string
-  description: string
+  description: string | null
   status: string
-  apply_start: string
-  apply_end: string
-  has_written_eval: boolean
-  has_exam: boolean
-  exam_first: boolean
+  applyStart: Date | null
+  applyEnd: Date | null
+  hasWrittenEval: boolean
+  hasExam: boolean
+  examFirst: boolean
 }
 
 interface Application {
   id: string
   status: string
-  created_at: string
-  user_id: string
-  applicant_name?: string
-  applicant_email?: string
+  createdAt: Date | null
+  userId: string
+  applicantName: string | null
+  email: string | null
 }
 
 interface Exam {
   id: string
   title: string
-  time_limit: number
+  timeLimitMinutes: number
   status: string
-  created_at: string
+  createdAt: Date | null
 }
 
 const APP_STATUS = {
@@ -63,7 +68,7 @@ export default function SelectionDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [selection, setSelection] = useState<Selection | null>(null)
   const [applications, setApplications] = useState<Application[]>([])
-  const [exams, setExams] = useState<Exam[]>([])
+  const [examList, setExamList] = useState<Exam[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabKey>("applications")
   const [evaluating, setEvaluating] = useState<Record<string, boolean>>({})
@@ -71,15 +76,15 @@ export default function SelectionDetailPage() {
 
   useEffect(() => {
     async function init() {
-      const [selRes, appRes, examRes] = await Promise.all([
-        supabase.from("selections").select("*").eq("id", id).single(),
-        supabase.from("applications").select("*").eq("selection_id", id).order("created_at", { ascending: false }),
-        supabase.from("exams").select("*").eq("selection_id", id).order("created_at", { ascending: false }),
+      const [selData, appData, examData] = await Promise.all([
+        getSelectionById(id),
+        getApplicationsBySelectionId(id),
+        getExamsBySelectionId(id),
       ])
 
-      if (selRes.data) setSelection(selRes.data as Selection)
-      if (appRes.data) setApplications(appRes.data as Application[])
-      if (examRes.data) setExams(examRes.data as Exam[])
+      if (selData) setSelection(selData as unknown as Selection)
+      if (appData) setApplications(appData as unknown as Application[])
+      if (examData) setExamList(examData as unknown as Exam[])
 
       setLoading(false)
     }
@@ -100,7 +105,7 @@ export default function SelectionDetailPage() {
 
   async function handleStatusChange(appId: string, newStatus: string) {
     setUpdatingStatus(p => ({ ...p, [appId]: true }))
-    await supabase.from("applications").update({ status: newStatus }).eq("id", appId)
+    await updateApplicationStatus(appId, newStatus)
     setApplications(prev => prev.map(a => a.id === appId ? { ...a, status: newStatus } : a))
     setUpdatingStatus(p => ({ ...p, [appId]: false }))
   }
@@ -124,18 +129,14 @@ export default function SelectionDetailPage() {
   const passCount = applications.filter(a => a.status === "pass").length
   const tabs = [
     { key: "applications" as TabKey, label: "지원서", icon: FileText, count: applications.length },
-    ...(selection.has_exam ? [{ key: "exams" as TabKey, label: "시험", icon: BookOpen, count: exams.length }] : []),
+    ...(selection.hasExam ? [{ key: "exams" as TabKey, label: "시험", icon: BookOpen, count: examList.length }] : []),
   ]
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
-      {/* 헤더 */}
       <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-5 h-16 flex items-center gap-3">
-          <Link
-            href="/admin"
-            className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
-          >
+          <Link href="/admin" className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
             <ArrowLeft className="h-4 w-4" />
             전형 목록
           </Link>
@@ -145,7 +146,6 @@ export default function SelectionDetailPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-5 py-6 space-y-5">
-        {/* 요약 카드 */}
         <div className="grid grid-cols-3 gap-4">
           {[
             { label: "총 지원자", value: applications.length, icon: Users },
@@ -164,7 +164,6 @@ export default function SelectionDetailPage() {
           ))}
         </div>
 
-        {/* 탭 */}
         <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1 w-fit">
           {tabs.map(tab => (
             <button
@@ -189,7 +188,6 @@ export default function SelectionDetailPage() {
           ))}
         </div>
 
-        {/* 지원서 탭 */}
         {activeTab === "applications" && (
           <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
             {applications.length === 0 ? (
@@ -214,12 +212,12 @@ export default function SelectionDetailPage() {
                       <tr key={app.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
                         <td className="px-4 py-3.5">
                           <p className="font-medium text-slate-800 dark:text-slate-200">
-                            {app.applicant_name ?? app.applicant_email ?? "—"}
+                            {app.applicantName ?? app.email ?? "-"}
                           </p>
-                          <p className="text-xs text-slate-400 font-mono mt-0.5">{app.user_id.slice(0, 8)}…</p>
+                          <p className="text-xs text-slate-400 font-mono mt-0.5">{app.userId.slice(0, 8)}...</p>
                         </td>
                         <td className="px-4 py-3.5 text-xs text-slate-400">
-                          {new Date(app.created_at).toLocaleDateString("ko-KR")}
+                          {app.createdAt ? new Date(app.createdAt).toLocaleDateString("ko-KR") : "-"}
                         </td>
                         <td className="px-4 py-3.5">
                           <StatusPill status={app.status} />
@@ -251,7 +249,7 @@ export default function SelectionDetailPage() {
                             {evaluating[app.id]
                               ? <Loader2 className="h-3 w-3 animate-spin" />
                               : <Sparkles className="h-3 w-3" />}
-                            {evaluating[app.id] ? "평가 중…" : "AI 평가"}
+                            {evaluating[app.id] ? "평가 중..." : "AI 평가"}
                           </button>
                         </td>
                       </tr>
@@ -263,7 +261,6 @@ export default function SelectionDetailPage() {
           </div>
         )}
 
-        {/* 시험 탭 */}
         {activeTab === "exams" && (
           <div className="bg-white dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/50 overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
@@ -275,18 +272,18 @@ export default function SelectionDetailPage() {
                 + 시험 출제
               </button>
             </div>
-            {exams.length === 0 ? (
+            {examList.length === 0 ? (
               <div className="py-16 text-center">
                 <BookOpen className="h-10 w-10 text-slate-200 dark:text-slate-700 mx-auto mb-3" />
                 <p className="text-sm text-slate-400">등록된 시험이 없습니다.</p>
               </div>
             ) : (
               <ul className="divide-y divide-slate-100 dark:divide-slate-700/40">
-                {exams.map(exam => (
+                {examList.map(exam => (
                   <li key={exam.id} className="px-5 py-4 flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{exam.title}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">제한 시간 {exam.time_limit}분</p>
+                      <p className="text-xs text-slate-400 mt-0.5">제한 시간 {exam.timeLimitMinutes}분</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <Link

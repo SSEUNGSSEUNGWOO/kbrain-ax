@@ -2,8 +2,16 @@
 
 import { useEffect, useState, useRef, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
-import { supabase } from "@/lib/supabase"
 import { api } from "@/lib/api"
+import {
+  getExamById,
+  getExamQuestionsWithDetails,
+  getProfileById,
+  insertActivityLog,
+  updateActivityLogVideoUrl,
+  getPendingCaptureRequests,
+  updateCaptureRequestStatus,
+} from "@/lib/db/actions"
 import {
   Loader2, Clock, CheckCircle2, XCircle, AlertCircle,
   Camera, CameraOff, EyeOff, Mic, MicOff, ShieldAlert,
@@ -20,16 +28,16 @@ const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false,
 interface Exam {
   id: string
   title: string
-  description: string
-  time_limit_minutes: number
-  passing_score: number
-  created_at: string
+  description: string | null
+  timeLimitMinutes: number
+  passingScore: number
+  createdAt: Date | null
 }
 
 interface Question {
   id: string
   content: string
-  type: "객관식" | "OX" | "단답형" | "서술형" | "코딩"
+  type: string
   options: string[] | null
   correct_answer: string | null
   explanation: string | null
@@ -76,6 +84,9 @@ const PRECAUTIONS = [
   "모든 답안 작성 후 최종 제출 버튼을 눌러 최종 제출해야 합니다.",
   "부정행위 적발 시 해당 시험은 무효 처리되며, 향후 응시가 제한될 수 있습니다.",
 ]
+
+// TODO: Replace with real user ID from auth when implemented
+const STUB_USER_ID = "00000000-0000-0000-0000-000000000000"
 
 // ── 대기실 컴포넌트 ────────────────────────────────────────────
 function WaitingRoom({
@@ -138,31 +149,27 @@ function WaitingRoom({
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-      {/* 헤더 */}
       <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
         <div className="max-w-4xl mx-auto">
           <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-1">시험 대기실</p>
           <h1 className="text-lg font-bold text-slate-900 dark:text-white">{exam.title}</h1>
           <div className="flex items-center gap-4 mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-            <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> 시험 시간: {exam.time_limit_minutes}분</span>
+            <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> 시험 시간: {exam.timeLimitMinutes}분</span>
             <span>{examQuestions.length}문제</span>
-            <span>합격 기준: {exam.passing_score}점</span>
+            <span>합격 기준: {exam.passingScore}점</span>
           </div>
         </div>
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* 왼쪽: 환경 점검 */}
           <div className="space-y-4">
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700">
                 <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200">환경 점검</h2>
                 <p className="text-xs text-slate-400 mt-0.5">시험 시작 전 아래 항목을 확인해 주세요</p>
               </div>
-
               <div className="divide-y divide-slate-100 dark:divide-slate-700">
-                {/* 웹캠 */}
                 <div className="px-5 py-4">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
@@ -170,12 +177,8 @@ function WaitingRoom({
                       <span className="text-sm font-medium text-slate-700 dark:text-slate-300">웹캠 연결</span>
                     </div>
                     {camStatus !== "ok" && (
-                      <button
-                        onClick={checkCam}
-                        disabled={camStatus === "checking"}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 transition-colors"
-                      >
-                        {camStatus === "checking" ? "확인 중…" : "확인하기"}
+                      <button onClick={checkCam} disabled={camStatus === "checking"} className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 transition-colors">
+                        {camStatus === "checking" ? "확인 중..." : "확인하기"}
                       </button>
                     )}
                     {camStatus === "ok" && <span className="text-xs text-emerald-500 font-medium">확인됨</span>}
@@ -185,12 +188,8 @@ function WaitingRoom({
                       <video ref={previewRef} autoPlay muted playsInline className="w-full h-full object-cover" />
                     </div>
                   )}
-                  {camStatus === "fail" && (
-                    <p className="text-xs text-red-500 mt-1">웹캠을 찾을 수 없습니다. 장치를 확인해 주세요.</p>
-                  )}
+                  {camStatus === "fail" && <p className="text-xs text-red-500 mt-1">웹캠을 찾을 수 없습니다. 장치를 확인해 주세요.</p>}
                 </div>
-
-                {/* 마이크 */}
                 <div className="px-5 py-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -198,24 +197,16 @@ function WaitingRoom({
                       <span className="text-sm font-medium text-slate-700 dark:text-slate-300">마이크 연결</span>
                     </div>
                     {micStatus !== "ok" && (
-                      <button
-                        onClick={checkMic}
-                        disabled={micStatus === "checking"}
-                        className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 transition-colors"
-                      >
-                        {micStatus === "checking" ? "확인 중…" : "확인하기"}
+                      <button onClick={checkMic} disabled={micStatus === "checking"} className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 transition-colors">
+                        {micStatus === "checking" ? "확인 중..." : "확인하기"}
                       </button>
                     )}
                     {micStatus === "ok" && <span className="text-xs text-emerald-500 font-medium">확인됨</span>}
                   </div>
-                  {micStatus === "fail" && (
-                    <p className="text-xs text-red-500 mt-1">마이크를 찾을 수 없습니다. 권한을 허용해 주세요.</p>
-                  )}
+                  {micStatus === "fail" && <p className="text-xs text-red-500 mt-1">마이크를 찾을 수 없습니다. 권한을 허용해 주세요.</p>}
                 </div>
               </div>
             </div>
-
-            {/* 유의사항 */}
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700">
                 <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200">유의사항</h2>
@@ -230,21 +221,12 @@ function WaitingRoom({
                   ))}
                 </ol>
                 <label className="flex items-center gap-2.5 mt-4 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={precautionAgreed}
-                    onChange={e => setPrecautionAgreed(e.target.checked)}
-                    className="h-4 w-4 rounded accent-blue-600"
-                  />
-                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    위 유의사항을 모두 읽었으며 동의합니다
-                  </span>
+                  <input type="checkbox" checked={precautionAgreed} onChange={e => setPrecautionAgreed(e.target.checked)} className="h-4 w-4 rounded accent-blue-600" />
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">위 유의사항을 모두 읽었으며 동의합니다</span>
                 </label>
               </div>
             </div>
           </div>
-
-          {/* 오른쪽: 보안 서약 */}
           <div>
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-red-200 dark:border-red-800/50 overflow-hidden">
               <div className="px-5 py-4 border-b border-red-100 dark:border-red-800/40 bg-red-50 dark:bg-red-900/20">
@@ -252,19 +234,12 @@ function WaitingRoom({
                   <ShieldAlert className="h-4 w-4 text-red-600 dark:text-red-400" />
                   <h2 className="text-sm font-bold text-red-800 dark:text-red-300">보안 서약</h2>
                 </div>
-                <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                  다음 부정행위 예시를 확인하고, 각 항목에 동의해 주세요. 위반 시 평가가 무효 처리되며 자격 박탈될 수 있습니다.
-                </p>
+                <p className="text-xs text-red-600 dark:text-red-400 mt-1">다음 부정행위 예시를 확인하고, 각 항목에 동의해 주세요. 위반 시 평가가 무효 처리되며 자격 박탈될 수 있습니다.</p>
               </div>
               <div className="px-5 py-4 space-y-3">
                 {SECURITY_ITEMS.map((item, i) => (
                   <label key={i} className="flex items-start gap-3 cursor-pointer group">
-                    <input
-                      type="checkbox"
-                      checked={securityChecked[i]}
-                      onChange={() => toggleSecurity(i)}
-                      className="h-4 w-4 mt-0.5 rounded accent-red-600 shrink-0"
-                    />
+                    <input type="checkbox" checked={securityChecked[i]} onChange={() => toggleSecurity(i)} className="h-4 w-4 mt-0.5 rounded accent-red-600 shrink-0" />
                     <span className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed group-hover:text-slate-800 dark:group-hover:text-slate-200 transition-colors">
                       {i + 1}. {item}
                     </span>
@@ -282,8 +257,6 @@ function WaitingRoom({
             </div>
           </div>
         </div>
-
-        {/* 시작 버튼 */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-5">
           {!canStart && (
             <div className="flex items-start gap-2 mb-4 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2.5">
@@ -319,8 +292,8 @@ export default function ExamPage() {
   const [exam, setExam] = useState<Exam | null>(null)
   const [examQuestions, setExamQuestions] = useState<ExamQuestion[]>([])
   const [answers, setAnswers] = useState<Record<string, string>>({})
-  const [userId, setUserId] = useState<string>("")
-  const [applicantName, setApplicantName] = useState<string>("")
+  const [userId] = useState<string>(STUB_USER_ID)
+  const [applicantName, setApplicantName] = useState<string>("지원자")
   const [captureWarning, setCaptureWarning] = useState<string | null>(null)
   const captureWarningTimerRef = useRef<NodeJS.Timeout | null>(null)
   const [startedAt, setStartedAt] = useState<Date | null>(null)
@@ -335,7 +308,7 @@ export default function ExamPage() {
   const [camStream, setCamStream] = useState<MediaStream | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const userIdRef = useRef<string>("")
+  const userIdRef = useRef<string>(STUB_USER_ID)
   const phaseRef = useRef<Phase>("loading")
   const recordingRef = useRef<{
     recorder: MediaRecorder | null
@@ -358,27 +331,37 @@ export default function ExamPage() {
   useEffect(() => { init() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function init() {
-    const { data: sessionData } = await supabase.auth.getSession()
-    if (!sessionData.session) { router.push("/signin"); return }
+    // Auth stub: use stub user ID
+    const profile = await getProfileById(STUB_USER_ID)
+    setApplicantName(profile?.fullName || "지원자")
 
-    const user = sessionData.session.user
-    setUserId(user.id)
-    userIdRef.current = user.id
+    const examData = await getExamById(examId)
+    if (!examData) { alert("시험 정보를 불러올 수 없습니다."); router.push("/"); return }
+    setExam(examData as Exam)
 
-    const { data: profile } = await supabase.from("profiles").select("full_name").eq("id", user.id).single()
-    setApplicantName(profile?.full_name || user.user_metadata?.full_name || user.email || user.id)
+    const eqData = await getExamQuestionsWithDetails(examId)
+    if (!eqData || eqData.length === 0) { alert("문제를 불러올 수 없습니다."); return }
 
-    const { data: examData, error: examError } = await supabase
-      .from("exams").select("*").eq("id", examId).single()
-    if (examError || !examData) { alert("시험 정보를 불러올 수 없습니다."); router.push("/"); return }
-    setExam(examData)
+    // Transform flat join results into nested ExamQuestion shape
+    const transformed: ExamQuestion[] = eqData.map(row => ({
+      id: row.id,
+      exam_id: row.examId,
+      question_id: row.questionId,
+      order_index: row.orderIndex,
+      points: row.points,
+      question: {
+        id: row.questionId,
+        content: row.questionContent,
+        type: row.questionType as Question["type"],
+        options: row.questionOptions as string[] | null,
+        correct_answer: row.questionCorrectAnswer,
+        explanation: row.questionExplanation,
+        category: row.questionCategory,
+        difficulty: row.questionDifficulty,
+      },
+    }))
 
-    const { data: eqData, error: eqError } = await supabase
-      .from("exam_questions").select("*, question:question_bank(*)")
-      .eq("exam_id", examId).order("order_index")
-    if (eqError || !eqData) { alert("문제를 불러올 수 없습니다."); return }
-
-    setExamQuestions(eqData)
+    setExamQuestions(transformed)
     setPhase("waiting")
   }
 
@@ -387,7 +370,7 @@ export default function ExamPage() {
     setCamStream(stream)
     const start = new Date()
     setStartedAt(start)
-    setEndsAt(new Date(start.getTime() + exam.time_limit_minutes * 60 * 1000))
+    setEndsAt(new Date(start.getTime() + exam.timeLimitMinutes * 60 * 1000))
     setNowMs(Date.now())
     setPhase("taking")
     if (stream) {
@@ -413,13 +396,11 @@ export default function ExamPage() {
     ref.chunks = []
     recorder.ondataavailable = (e) => { if (e.data.size > 0) ref.chunks.push(e.data) }
     recorder.onstop = async () => {
-      const blob = new Blob(ref.chunks, { type: "video/webm" })
+      // Storage upload removed — video blob is discarded
+      // The activity log was already inserted; no video_url update
       const incidentId = ref.pendingIncidentId
       ref.pendingIncidentId = null
       ref.chunks = []
-      if (incidentId && blob.size > 0) {
-        await uploadIncidentVideo(incidentId, blob)
-      }
       if (phaseRef.current === "taking" && ref.stream?.active) {
         startIncidentRecording()
       }
@@ -474,7 +455,6 @@ export default function ExamPage() {
     const COOLDOWN_MS = 60_000
     const THRESHOLD_MS = 5_000
     const log = ref.logger
-    // 얼굴 0명: 자리 비움 / 카메라 가림
     if (count === 0) {
       ref.multipleSince = null
       if (ref.absentSince === null) ref.absentSince = now
@@ -485,7 +465,6 @@ export default function ExamPage() {
       }
       return
     }
-    // 얼굴 2명+: 도움 받음 의심
     if (count >= 2) {
       ref.absentSince = null
       if (ref.multipleSince === null) ref.multipleSince = now
@@ -496,7 +475,6 @@ export default function ExamPage() {
       }
       return
     }
-    // 얼굴 1명: 정상 (타이머 리셋)
     ref.absentSince = null
     ref.multipleSince = null
   }
@@ -507,18 +485,6 @@ export default function ExamPage() {
     if (ref.detector) { ref.detector.close(); ref.detector = null }
     ref.absentSince = null
     ref.multipleSince = null
-  }
-
-  async function uploadIncidentVideo(incidentId: string, blob: Blob) {
-    const path = `${userIdRef.current}/${examId}/${incidentId}.webm`
-    const { error: upErr } = await supabase.storage
-      .from("exam-incidents")
-      .upload(path, blob, { contentType: "video/webm", upsert: false })
-    if (upErr) {
-      console.error("Incident upload failed:", upErr)
-      return
-    }
-    await supabase.from("activity_logs").update({ video_url: path }).eq("id", incidentId)
   }
 
   useEffect(() => {
@@ -532,28 +498,21 @@ export default function ExamPage() {
     if (phase !== "taking") return
     const handled = new Set<string>()
     const interval = setInterval(async () => {
-      const { data } = await supabase
-        .from("exam_capture_requests")
-        .select("id")
-        .eq("target_user_id", userIdRef.current)
-        .eq("exam_id", examId)
-        .eq("status", "pending")
+      const data = await getPendingCaptureRequests(userIdRef.current, examId)
       if (!data || data.length === 0) return
       for (const req of data) {
         if (handled.has(req.id)) continue
         handled.add(req.id)
         const logger = faceDetectorRef.current.logger
         if (!logger) continue
-        const incidentId = await logger("admin_capture", `request_${req.id}`, { attachVideo: true })
-        await supabase.from("exam_capture_requests")
-          .update({ status: "captured", captured_at: new Date().toISOString(), incident_id: incidentId })
-          .eq("id", req.id)
+        logger("admin_capture", `request_${req.id}`, { attachVideo: true })
+        await updateCaptureRequestStatus(req.id, "captured")
       }
     }, 5000)
     return () => clearInterval(interval)
   }, [phase, examId])
 
-  // 얼굴 감지: phase가 taking이고 카메라가 있을 때 시작
+  // 얼굴 감지
   useEffect(() => {
     if (phase !== "taking" || !camStream) return
     const video = videoRef.current
@@ -567,7 +526,7 @@ export default function ExamPage() {
       video.removeEventListener("loadeddata", onPlay)
       stopFaceDetector()
     }
-  }, [phase, camStream])
+  }, [phase, camStream]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 부정행위 방지
   useEffect(() => {
@@ -584,20 +543,20 @@ export default function ExamPage() {
         if (captureWarningTimerRef.current) clearTimeout(captureWarningTimerRef.current)
         captureWarningTimerRef.current = setTimeout(() => setCaptureWarning(null), 5000)
       }
-      const { data, error } = await supabase.from("activity_logs").insert({
-        user_id: userIdRef.current,
-        event_type: eventType,
+      const result = await insertActivityLog({
+        userId: userIdRef.current,
+        eventType,
         metadata: { exam_id: examId, reason, ts: new Date().toISOString() },
-      }).select("id").single()
-      if (error || !data) return null
-      if (!attachVideo) return data.id
+      })
+      if (!result) return null
+      if (!attachVideo) return result.id
       const ref = recordingRef.current
       if (ref.recorder && ref.recorder.state !== "inactive") {
-        ref.pendingIncidentId = data.id
+        ref.pendingIncidentId = result.id
         if (ref.rotationTimer) { clearTimeout(ref.rotationTimer); ref.rotationTimer = null }
         ref.recorder.stop()
       }
-      return data.id
+      return result.id
     }
     faceDetectorRef.current.logger = logIncident
 
@@ -613,14 +572,12 @@ export default function ExamPage() {
       const isPrintScreen = e.key === "PrintScreen" || e.code === "PrintScreen"
       const isMacCapture = e.metaKey && e.shiftKey && ["3", "4", "5", "6"].includes(e.key)
       const isWinSnip = e.metaKey && e.shiftKey && k === "s"
-      // 캡쳐 의심 키
       if (isPrintScreen || isMacCapture || isWinSnip) {
         e.preventDefault()
         const reason = isPrintScreen ? "PrintScreen" : isMacCapture ? `Cmd+Shift+${e.key}` : "Win+Shift+S"
         logIncident("capture_attempt", reason, { warning: captureMsg, attachVideo: true })
         return
       }
-      // 개발자 도구 (의심도 높음)
       if (e.key === "F12") {
         e.preventDefault()
         logIncident("devtool_attempt", "F12", { attachVideo: true })
@@ -679,7 +636,7 @@ export default function ExamPage() {
     }
   }, [phase]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 타이머: 종료 시각과 현재 시각을 비교 (탭 throttle/sleep에도 정확)
+  // 타이머
   useEffect(() => {
     if (phase !== "taking" || !endsAt) return
     const tick = () => {
@@ -709,11 +666,11 @@ export default function ExamPage() {
     stopWebcam()
     setSubmitting(true)
     if (tabSwitchCount > 0) {
-      supabase.from("activity_logs").insert({
-        user_id: userIdRef.current,
-        event_type: "exam_submit",
+      insertActivityLog({
+        userId: userIdRef.current,
+        eventType: "exam_submit",
         metadata: { exam_id: examId, tab_switch_count: tabSwitchCount },
-      }).then(() => {})
+      })
     }
     try {
       const { score, is_passed } = await api.exams.submitDirect({
@@ -761,7 +718,6 @@ export default function ExamPage() {
     })
   }
 
-  // ── 로딩 ──────────────────────────────────────────────────
   if (phase === "loading") {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
@@ -770,12 +726,10 @@ export default function ExamPage() {
     )
   }
 
-  // ── 대기실 ─────────────────────────────────────────────────
   if (phase === "waiting" && exam) {
     return <WaitingRoom exam={exam} examQuestions={examQuestions} onStart={startExam} />
   }
 
-  // ── 시험 응시 ───────────────────────────────────────────────
   if (phase === "taking" && exam) {
     const timeLeft = endsAt ? Math.max(0, Math.floor((endsAt.getTime() - nowMs) / 1000)) : 0
     const timerWarning = timeLeft < 300
@@ -787,7 +741,6 @@ export default function ExamPage() {
 
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col relative">
-        {/* 캡쳐 경고 토스트 */}
         {captureWarning && (
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-md px-5 py-3 rounded-xl bg-red-600 text-white shadow-2xl flex items-center gap-2.5 animate-pulse">
             <ShieldAlert className="w-5 h-5 shrink-0" />
@@ -795,7 +748,6 @@ export default function ExamPage() {
           </div>
         )}
 
-        {/* 상단 헤더 */}
         <div className="sticky top-0 z-10 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm">
           <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -813,15 +765,14 @@ export default function ExamPage() {
               }`}>
                 <Clock className="w-3.5 h-3.5" />
                 <span>지금 {formatClock(new Date(nowMs))}</span>
-                <span className="opacity-40">·</span>
+                <span className="opacity-40">-</span>
                 <span>종료 {endsAt ? formatClock(endsAt) : "--:--:--"}</span>
-                <span className="opacity-40">·</span>
+                <span className="opacity-40">-</span>
                 <span>남은 {formatTime(timeLeft)}</span>
               </div>
             </div>
           </div>
 
-          {/* 문제 번호 점 진행바 */}
           <div className="max-w-3xl mx-auto px-4 pb-3 flex gap-1.5 flex-wrap">
             {examQuestions.map((q, i) => (
               <button
@@ -844,7 +795,6 @@ export default function ExamPage() {
           </div>
         </div>
 
-        {/* 웹캠 플로팅 */}
         <div className="fixed bottom-6 right-6 z-20">
           {camStream ? (
             <div className="relative w-32 h-24 rounded-xl overflow-hidden border-2 border-slate-700 shadow-lg bg-black">
@@ -861,7 +811,6 @@ export default function ExamPage() {
           )}
         </div>
 
-        {/* 문제 카드 */}
         <div className="flex-1 max-w-3xl w-full mx-auto px-4 py-6">
           {eq && (
             <QuestionCard key={eq.question.id} index={currentIndex} eq={eq}
@@ -870,7 +819,6 @@ export default function ExamPage() {
           )}
         </div>
 
-        {/* 하단 네비게이션 */}
         <div className="sticky bottom-0 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 px-4 py-3">
           <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
             <button
@@ -905,7 +853,6 @@ export default function ExamPage() {
     )
   }
 
-  // ── 결과 ───────────────────────────────────────────────────
   if (phase === "submitted" && result && exam) {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-900 py-8 px-4">
@@ -918,7 +865,7 @@ export default function ExamPage() {
             <p className={`text-lg font-semibold mb-2 ${result.is_passed ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
               {result.is_passed ? "합격" : "불합격"}
             </p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">합격 기준: {exam.passing_score}점 이상</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">합격 기준: {exam.passingScore}점 이상</p>
             {tabSwitchCount > 0 && (
               <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-xs font-medium">
                 <EyeOff className="w-3.5 h-3.5" /> 탭 전환 {tabSwitchCount}회 감지됨
@@ -926,7 +873,7 @@ export default function ExamPage() {
             )}
             {result.examQuestions.some(eq => eq.question.type === "서술형" || eq.question.type === "코딩") && (
               <div className="mt-4 text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50 rounded-lg p-2">
-                서술형·코딩 문제는 수동 채점이 진행됩니다. 최종 결과는 변경될 수 있습니다.
+                서술형/코딩 문제는 수동 채점이 진행됩니다. 최종 결과는 변경될 수 있습니다.
               </div>
             )}
           </div>
@@ -1087,7 +1034,7 @@ function QuestionCard({ index, eq, answer, onAnswer, flagged, onToggleFlag }: {
               theme="vs-dark"
               options={{ fontSize: 14, minimap: { enabled: false }, scrollBeyondLastLine: false, tabSize: 4, wordWrap: "on", lineNumbers: "on", padding: { top: 12, bottom: 12 } }} />
           </div>
-          <p className="text-xs text-slate-400">Tab 키로 들여쓰기 · 수동 채점 문항</p>
+          <p className="text-xs text-slate-400">Tab 키로 들여쓰기 - 수동 채점 문항</p>
         </div>
       )}
     </div>
